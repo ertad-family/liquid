@@ -1,0 +1,106 @@
+{
+  "queryType": {"name": "Query"},
+  "mutationType": {"name": "Mutation"},
+  "types": [
+    {
+      "kind": "OBJECT",
+      "name": "Query",
+      "description": "Root query type",
+      "fields": [
+        {
+          "name": "users",
+          "description": "List all users",
+          "args": [
+            {
+              "name": "limit",
+              "description": "Max results",
+              "type": {"kind": "SCALAR", "name": "Int", "ofType": null},
+              "defaultValue": "10"
+            },
+            {
+              "name": "after",
+              "description": "Cursor for pagination",
+              "type": {"kind": "SCALAR", "name": "String", "ofType": null},
+              "defaultValue": null
+            }
+          ],
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {"kind": "OBJECT", "name": "User", "ofType": null}
+          }
+        },
+        {
+          "name": "user",
+          "description": "Get user by ID",
+          "args": [
+            {
+              "name": "id",
+              "description": "User ID",
+              "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID"}},
+              "defaultValue": null
+            }
+          ],
+          "type": {"kind": "OBJECT", "name": "User", "ofType": null}
+        }
+      ]
+    },
+    {
+      "kind": "OBJECT",
+      "name": "Mutation",
+      "description": "Root mutation type",
+      "fields": [
+        {
+          "name": "createUser",
+          "description": "Create a new user",
+          "args": [
+            {
+              "name": "name",
+              "description": "User name",
+              "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "String"}},
+              "defaultValue": null
+            }
+          ],
+          "type": {"kind": "OBJECT", "name": "User", "ofType": null}
+        }
+      ]
+    },
+    {
+      "kind": "OBJECT",
+      "name": "User",
+      "description": "A user",
+      "fields": [
+        {
+          "name": "id",
+          "description": null,
+          "args": [],
+          "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID"}}
+        },
+        {
+          "name": "name",
+          "description": null,
+          "args": [],
+          "type": {"kind": "SCALAR", "name": "String", "ofType": null}
+        }
+      ]
+    },
+    {
+      "kind": "SCALAR",
+      "name": "String",
+      "description": "Built-in String",
+      "fields": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "Int",
+      "description": "Built-in Int",
+      "fields": null
+    },
+    {
+      "kind": "SCALAR",
+      "name": "ID",
+      "description": "Built-in ID",
+      "fields": null
+    }
+  ]
+}
