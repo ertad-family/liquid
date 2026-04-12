@@ -9,6 +9,7 @@ import httpx
 from liquid.auth.classifier import AuthClassifier, EscalationInfo
 from liquid.auth.manager import AuthManager
 from liquid.discovery.base import DiscoveryPipeline
+from liquid.discovery.browser import BrowserDiscovery
 from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
@@ -68,6 +69,7 @@ class Liquid:
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
                     RESTHeuristicDiscovery(llm=self.llm, http_client=client),
+                    BrowserDiscovery(llm=self.llm),
                 ]
             )
             return await pipeline.discover(url)
