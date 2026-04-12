@@ -5,7 +5,9 @@ description = "AI discovers APIs. Code syncs data. No adapters to write."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.7",
+]
 
 [project.optional-dependencies]
 dev = [
