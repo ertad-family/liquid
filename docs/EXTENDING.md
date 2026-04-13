@@ -153,7 +153,6 @@ LiquidError
 │   ├── RateLimitError      — 429 response (has retry_after)
 │   ├── ServiceDownError    — 5xx response
 │   └── EndpointGoneError   — 404/410 response
-├── ReDiscoveryNeededError  — persistent failures threshold exceeded
 └── VaultError              — credential storage failures
 ```
 

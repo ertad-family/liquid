@@ -75,4 +75,4 @@ class TestRESTHeuristicDiscovery:
 
         assert result is not None
         assert len(result.endpoints) > 0
-        assert result.service_name == "Unknown"
+        assert result.service_name == "Test"  # inferred from api.test.com

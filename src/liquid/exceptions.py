@@ -43,9 +43,5 @@ class EndpointGoneError(SyncRuntimeError):
     pass
 
 
-class ReDiscoveryNeededError(LiquidError):
-    pass
-
-
 class VaultError(LiquidError):
     pass
