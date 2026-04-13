@@ -9,7 +9,6 @@ from liquid.exceptions import (
     LiquidError,
     MappingError,
     RateLimitError,
-    ReDiscoveryNeededError,
     ServiceDownError,
     SyncRuntimeError,
     VaultError,
@@ -22,7 +21,6 @@ def test_hierarchy_liquid_error_catches_all():
         AuthSetupError,
         MappingError,
         SyncRuntimeError,
-        ReDiscoveryNeededError,
         VaultError,
     ]
     for exc_class in all_errors:
