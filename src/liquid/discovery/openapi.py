@@ -11,6 +11,7 @@ from liquid.models.schema import (
     APISchema,
     AuthRequirement,
     Endpoint,
+    EndpointKind,
     PaginationType,
     Parameter,
     ParameterLocation,
@@ -104,17 +105,23 @@ class OpenAPIDiscovery:
 
                 params = self._extract_parameters(path_item.get("parameters", []) + operation.get("parameters", []))
                 response_schema = self._extract_response_schema(operation, is_v3)
+                request_schema = self._extract_request_schema(operation, is_v3)
                 description = operation.get("summary", operation.get("description", ""))
                 pagination = self._infer_pagination(params)
+                kind = self._method_to_kind(method)
+                idempotency_header = self._detect_idempotency(operation)
 
                 endpoints.append(
                     Endpoint(
                         path=path,
                         method=method.upper(),
                         description=str(description)[:500] if description else "",
+                        kind=kind,
                         parameters=params,
+                        request_schema=request_schema,
                         response_schema=response_schema,
                         pagination=pagination,
+                        idempotency_header=idempotency_header,
                     )
                 )
 
@@ -150,6 +157,40 @@ class OpenAPIDiscovery:
                 )
             )
         return params
+
+    @staticmethod
+    def _method_to_kind(method: str) -> EndpointKind:
+        match method:
+            case "post" | "put" | "patch":
+                return EndpointKind.WRITE
+            case "delete":
+                return EndpointKind.DELETE
+            case _:
+                return EndpointKind.READ
+
+    def _extract_request_schema(self, operation: dict[str, Any], is_v3: bool) -> dict[str, Any] | None:
+        if is_v3:
+            request_body = operation.get("requestBody")
+            if not request_body or not isinstance(request_body, dict):
+                return None
+            content = request_body.get("content", {})
+            json_content = content.get("application/json", {})
+            return json_content.get("schema") or None
+        else:
+            for param in operation.get("parameters", []):
+                if isinstance(param, dict) and param.get("in") == "body":
+                    return param.get("schema")
+            return None
+
+    @staticmethod
+    def _detect_idempotency(operation: dict[str, Any]) -> str | None:
+        known_headers = {"idempotency-key", "x-idempotency-key", "x-shopify-idempotency-token"}
+        for param in operation.get("parameters", []):
+            if isinstance(param, dict) and param.get("in") == "header":
+                name = param.get("name", "")
+                if name.lower() in known_headers:
+                    return name
+        return None
 
     def _extract_response_schema(self, operation: dict[str, Any], is_v3: bool) -> dict[str, Any]:
         responses = operation.get("responses", {})

@@ -45,3 +45,7 @@ class EndpointGoneError(SyncRuntimeError):
 
 class VaultError(LiquidError):
     pass
+
+
+class ActionNotVerifiedError(LiquidError):
+    pass

@@ -21,6 +21,13 @@ class RetryPolicy:
     )
 
 
+WRITE_RETRY_DEFAULTS = RetryPolicy(
+    max_retries=2,
+    base_delay=1.0,
+    max_delay=30.0,
+)
+
+
 async def with_retry[T](fn: Callable[[], Awaitable[T]], policy: RetryPolicy) -> T:
     last_exception: Exception | None = None
 
