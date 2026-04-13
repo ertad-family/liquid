@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from liquid.models.schema import SchemaDiff  # noqa: TC001
 from liquid.models.sync import SyncError, SyncResult  # noqa: TC001
 
 
@@ -24,6 +25,11 @@ class SyncFailed(Event):
 
 class ReDiscoveryNeeded(Event):
     reason: str
+
+
+class AdapterRepaired(Event):
+    diff: SchemaDiff
+    auto_approved: bool = False
 
 
 @runtime_checkable

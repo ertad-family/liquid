@@ -70,3 +70,15 @@ class APISchema(BaseModel):
     auth: AuthRequirement
     rate_limits: RateLimits | None = None
     discovered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SchemaDiff(BaseModel):
+    """Structured diff between two APISchema versions."""
+
+    added_endpoints: list[Endpoint] = Field(default_factory=list)
+    removed_endpoints: list[Endpoint] = Field(default_factory=list)
+    unchanged_endpoints: list[Endpoint] = Field(default_factory=list)
+    added_fields: list[str] = Field(default_factory=list)
+    removed_fields: list[str] = Field(default_factory=list)
+    unchanged_fields: list[str] = Field(default_factory=list)
+    has_breaking_changes: bool = False
