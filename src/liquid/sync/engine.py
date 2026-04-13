@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from liquid.events import ReDiscoveryNeeded, SyncCompleted, SyncFailed
 from liquid.exceptions import SyncRuntimeError
@@ -19,6 +19,14 @@ if TYPE_CHECKING:
     from liquid.protocols import DataSink
 
 logger = logging.getLogger(__name__)
+
+
+class _EndpointSyncResult(TypedDict):
+    fetched: int
+    mapped: int
+    delivered: int
+    errors: list[SyncError]
+    cursor: str | None
 
 
 class SyncEngine:
@@ -86,8 +94,8 @@ class SyncEngine:
         ep_path: str,
         config: AdapterConfig,
         cursor: str | None,
-    ) -> dict:
-        """Sync a single endpoint with pagination. Returns stats dict."""
+    ) -> _EndpointSyncResult:
+        """Sync a single endpoint with pagination."""
         fetched = 0
         mapped = 0
         delivered = 0

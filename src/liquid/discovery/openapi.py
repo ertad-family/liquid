@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import httpx
+import httpx  # noqa: TC002
 import yaml
 
 from liquid.exceptions import DiscoveryError
@@ -39,7 +39,9 @@ class OpenAPIDiscovery:
         self._external_client = http_client
 
     async def discover(self, url: str) -> APISchema | None:
-        async with self._get_client() as client:
+        from liquid.discovery.utils import managed_http_client
+
+        async with managed_http_client(self._external_client) as client:
             spec = await self._find_spec(client, url)
             if spec is None:
                 return None
@@ -206,22 +208,3 @@ class OpenAPIDiscovery:
         if "page" in param_names or "page_number" in param_names:
             return PaginationType.PAGE_NUMBER
         return None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._external_client:
-
-            class _NoOpContext:
-                async def __aenter__(self):
-                    return self
-
-                async def __aexit__(self, *args):
-                    pass
-
-                def __getattr__(self, name):
-                    return getattr(self._client, name)
-
-                def __init__(self, client):
-                    self._client = client
-
-            return _NoOpContext(self._external_client)  # type: ignore[return-value]
-        return httpx.AsyncClient()
