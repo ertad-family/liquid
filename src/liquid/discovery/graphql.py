@@ -156,15 +156,11 @@ class GraphQLDiscovery:
             return {"type": "string", "title": name}
         return {"type": "object"}
 
-    def _infer_service_name(self, url: str) -> str:
-        from urllib.parse import urlparse
+    @staticmethod
+    def _infer_service_name(url: str) -> str:
+        from liquid.discovery.utils import infer_service_name
 
-        parsed = urlparse(url)
-        host = parsed.hostname or "unknown"
-        parts = host.split(".")
-        if len(parts) >= 2:
-            return parts[-2].capitalize()
-        return host.capitalize()
+        return infer_service_name(url)
 
 
 def _scalar_to_json_type(name: str) -> str:

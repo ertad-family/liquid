@@ -59,51 +59,12 @@ class SyncEngine:
                 )
                 continue
 
-            try:
-                page_cursor = current_cursor
-                while True:
-                    fetch_result = await with_retry(
-                        lambda ep=endpoint, c=page_cursor: self.fetcher.fetch(
-                            endpoint=ep,
-                            base_url=config.schema_.source_url,
-                            auth_ref=config.auth_ref,
-                            cursor=c,
-                        ),
-                        self.retry_policy,
-                    )
-
-                    total_fetched += len(fetch_result.records)
-
-                    mapped_records = self.mapper.map_batch(fetch_result.records, ep_path)
-                    total_mapped += len(mapped_records)
-
-                    delivery = await self.sink.deliver(mapped_records)
-                    total_delivered += delivery.delivered
-
-                    if delivery.errors:
-                        for err_msg in delivery.errors:
-                            errors.append(
-                                SyncError(
-                                    type=SyncErrorType.DELIVERY_ERROR,
-                                    message=err_msg,
-                                    endpoint=ep_path,
-                                )
-                            )
-
-                    page_cursor = fetch_result.next_cursor
-                    current_cursor = page_cursor
-                    if page_cursor is None:
-                        break
-
-            except SyncRuntimeError as e:
-                error_type = _classify_error(e)
-                errors.append(
-                    SyncError(
-                        type=error_type,
-                        message=str(e),
-                        endpoint=ep_path,
-                    )
-                )
+            ep_result = await self._sync_endpoint(endpoint, ep_path, config, current_cursor)
+            total_fetched += ep_result["fetched"]
+            total_mapped += ep_result["mapped"]
+            total_delivered += ep_result["delivered"]
+            errors.extend(ep_result["errors"])
+            current_cursor = ep_result["cursor"]
 
         result = SyncResult(
             adapter_id=config.config_id,
@@ -118,6 +79,54 @@ class SyncEngine:
 
         await self._handle_result(result, config)
         return result
+
+    async def _sync_endpoint(
+        self,
+        endpoint: Endpoint,
+        ep_path: str,
+        config: AdapterConfig,
+        cursor: str | None,
+    ) -> dict:
+        """Sync a single endpoint with pagination. Returns stats dict."""
+        fetched = 0
+        mapped = 0
+        delivered = 0
+        errors: list[SyncError] = []
+        page_cursor = cursor
+
+        try:
+            while True:
+                fetch_result = await with_retry(
+                    lambda ep=endpoint, c=page_cursor: self.fetcher.fetch(
+                        endpoint=ep,
+                        base_url=config.schema_.source_url,
+                        auth_ref=config.auth_ref,
+                        cursor=c,
+                    ),
+                    self.retry_policy,
+                )
+
+                fetched += len(fetch_result.records)
+                mapped_records = self.mapper.map_batch(fetch_result.records, ep_path)
+                mapped += len(mapped_records)
+
+                delivery = await self.sink.deliver(mapped_records)
+                delivered += delivery.delivered
+
+                if delivery.errors:
+                    errors.extend(
+                        SyncError(type=SyncErrorType.DELIVERY_ERROR, message=msg, endpoint=ep_path)
+                        for msg in delivery.errors
+                    )
+
+                page_cursor = fetch_result.next_cursor
+                if page_cursor is None:
+                    break
+
+        except SyncRuntimeError as e:
+            errors.append(SyncError(type=_classify_error(e), message=str(e), endpoint=ep_path))
+
+        return {"fetched": fetched, "mapped": mapped, "delivered": delivered, "errors": errors, "cursor": page_cursor}
 
     async def _handle_result(self, result: SyncResult, config: AdapterConfig) -> None:
         if not self.event_handler:
