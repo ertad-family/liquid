@@ -68,6 +68,19 @@ class InMemoryAdapterRegistry:
     async def get(self, url: str, target_model: str) -> AdapterConfig | None:
         return self._by_service.get(f"{url}:{target_model}")
 
+    async def search(self, query: str) -> list[AdapterConfig]:
+        """Simple substring search across service names and URLs."""
+        query_lower = query.lower()
+        return [
+            config
+            for config in self._by_id.values()
+            if query_lower in config.schema_.service_name.lower() or query_lower in config.schema_.source_url.lower()
+        ]
+
+    async def get_by_service(self, service_name: str) -> list[AdapterConfig]:
+        name_lower = service_name.lower()
+        return [config for config in self._by_id.values() if config.schema_.service_name.lower() == name_lower]
+
     async def save(self, config: AdapterConfig, target_model: str) -> None:
         key = f"{config.schema_.source_url}:{target_model}"
         self._by_service[key] = config
