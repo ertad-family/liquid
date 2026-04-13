@@ -1,6 +1,6 @@
-"""Liquid — AI discovers APIs. Code syncs data. No adapters to write."""
+"""Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from liquid.client import Liquid
 from liquid.exceptions import (
@@ -27,11 +27,12 @@ from liquid.models import (
     SyncConfig,
     SyncResult,
 )
-from liquid.protocols import DataSink, KnowledgeStore, LLMBackend, Vault
+from liquid.protocols import AdapterRegistry, DataSink, KnowledgeStore, LLMBackend, Vault
 
 __all__ = [
     "APISchema",
     "AdapterConfig",
+    "AdapterRegistry",
     "AuthError",
     "AuthRequirement",
     "AuthSetupError",
