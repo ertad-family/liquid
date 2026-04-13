@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from liquid.models.action import ActionError  # noqa: TC001
 from liquid.models.schema import SchemaDiff  # noqa: TC001
 from liquid.models.sync import SyncError, SyncResult  # noqa: TC001
 
@@ -30,6 +31,25 @@ class ReDiscoveryNeeded(Event):
 class AdapterRepaired(Event):
     diff: SchemaDiff
     auto_approved: bool = False
+
+
+class ActionExecuted(Event):
+    """Emitted after a write action completes (success or failure)."""
+
+    action_id: str
+    endpoint_path: str
+    method: str
+    success: bool
+    status_code: int
+    error: ActionError | None = None
+
+
+class ActionFailed(Event):
+    """Emitted when a write action fails after all retries."""
+
+    action_id: str
+    error: ActionError
+    consecutive_failures: int = 1
 
 
 @runtime_checkable

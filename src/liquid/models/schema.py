@@ -46,13 +46,22 @@ class RateLimits(BaseModel):
     retry_after_header: str | None = None
 
 
+class EndpointKind(StrEnum):
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+
+
 class Endpoint(BaseModel):
     path: str
     method: str = "GET"
     description: str = ""
+    kind: EndpointKind = EndpointKind.READ
     parameters: list[Parameter] = Field(default_factory=list)
+    request_schema: dict[str, Any] | None = None
     response_schema: dict[str, Any] = Field(default_factory=dict)
     pagination: PaginationType | None = None
+    idempotency_header: str | None = None
 
 
 class AuthRequirement(BaseModel):
@@ -81,4 +90,6 @@ class SchemaDiff(BaseModel):
     added_fields: list[str] = Field(default_factory=list)
     removed_fields: list[str] = Field(default_factory=list)
     unchanged_fields: list[str] = Field(default_factory=list)
+    modified_request_schemas: list[str] = Field(default_factory=list)
+    removed_write_endpoints: list[str] = Field(default_factory=list)
     has_breaking_changes: bool = False

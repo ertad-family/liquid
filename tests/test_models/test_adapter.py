@@ -26,7 +26,7 @@ class TestFieldMapping:
 class TestSyncConfig:
     def test_defaults(self):
         sc = SyncConfig(endpoints=["/orders"])
-        assert sc.schedule == "0 */6 * * *"
+        assert sc.schedule is None  # agent-first: no schedule by default
         assert sc.batch_size == 100
         assert sc.cursor_field is None
 
