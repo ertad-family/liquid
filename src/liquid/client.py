@@ -29,14 +29,15 @@ if TYPE_CHECKING:
     from liquid.events import EventHandler
     from liquid.models.schema import SchemaDiff
     from liquid.models.sync import SyncResult
-    from liquid.protocols import DataSink, KnowledgeStore, LLMBackend, Vault
+    from liquid.protocols import AdapterRegistry, DataSink, KnowledgeStore, LLMBackend, Vault
     from liquid.sync.retry import RetryPolicy
 
 
 class Liquid:
     """Main entry point for the Liquid library.
 
-    Orchestrates: discover → classify auth → propose mappings → sync.
+    Connects AI agents to any API: discover → map → fetch.
+    Like Zapier, but for AI agents — and the integrations maintain themselves.
     """
 
     def __init__(
@@ -45,6 +46,7 @@ class Liquid:
         vault: Vault,
         sink: DataSink,
         knowledge: KnowledgeStore | None = None,
+        registry: AdapterRegistry | None = None,
         event_handler: EventHandler | None = None,
         http_client: httpx.AsyncClient | None = None,
         retry_policy: RetryPolicy | None = None,
@@ -53,6 +55,7 @@ class Liquid:
         self.vault = vault
         self.sink = sink
         self.knowledge = knowledge
+        self.registry = registry
         self.event_handler = event_handler
         self._http_client = http_client
         self._retry_policy = retry_policy
@@ -134,6 +137,84 @@ class Liquid:
         finally:
             if not self._http_client:
                 await client.aclose()
+
+    async def get_or_create(
+        self,
+        url: str,
+        target_model: dict[str, Any],
+        credentials: dict[str, Any] | None = None,
+        auto_approve: bool = False,
+        confidence_threshold: float = 0.8,
+    ) -> AdapterConfig | MappingReview:
+        """Connect to a service — reuse existing integration or create a new one.
+
+        This is the primary entry point for AI agents. The agent says
+        "I need Shopify data shaped like this model" and Liquid handles the rest:
+        - Checks registry for existing integration
+        - If found and healthy → returns it
+        - If not found → discovers API, proposes mappings, creates adapter
+        - If auto_approve=True and confidence is high → returns ready AdapterConfig
+        - Otherwise → returns MappingReview for human approval
+
+        Requires registry to be set on the Liquid instance.
+        """
+        if not self.registry:
+            msg = "AdapterRegistry is required for get_or_create(). Pass registry= to Liquid()."
+            raise ValueError(msg)
+
+        target_key = json.dumps(target_model, sort_keys=True)
+
+        existing = await self.registry.get(url, target_key)
+        if existing is not None:
+            return existing
+
+        schema = await self.discover(url)
+
+        if credentials:
+            auth_ref = await self.store_credentials(schema.service_name, credentials)
+        else:
+            auth_ref = f"liquid/{schema.service_name}"
+
+        proposals = await self._mapping_proposer.propose(schema, target_model)
+        review = MappingReview(proposals)
+
+        if auto_approve and all(m.confidence >= confidence_threshold for m in proposals):
+            review.approve_all()
+            config = AdapterConfig(
+                schema=schema,
+                auth_ref=auth_ref,
+                mappings=review.finalize(),
+                sync=SyncConfig(endpoints=[ep.path for ep in schema.endpoints]),
+            )
+            await self.registry.save(config, target_key)
+            return config
+
+        return review
+
+    async def fetch(self, config: AdapterConfig, endpoint: str | None = None) -> list[dict[str, Any]]:
+        """Fetch data through an adapter — the primary way agents get data.
+
+        If endpoint is None, fetches from the first endpoint in sync config.
+        Returns mapped records as plain dicts.
+        """
+        from liquid.discovery.utils import managed_http_client
+
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+        if target_ep is None:
+            msg = f"Endpoint {ep_path} not found in adapter schema"
+            raise ValueError(msg)
+
+        async with managed_http_client(self._http_client) as client:
+            fetcher = Fetcher(http_client=client, vault=self.vault)
+            result = await fetcher.fetch(
+                endpoint=target_ep,
+                base_url=config.schema_.source_url,
+                auth_ref=config.auth_ref,
+            )
+            mapper = RecordMapper(config.mappings)
+            mapped = mapper.map_batch(result.records, ep_path)
+            return [r.mapped_data for r in mapped]
 
     async def repair_adapter(
         self,
