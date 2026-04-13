@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from liquid.models.action import ActionConfig  # noqa: TC001
 from liquid.models.schema import APISchema  # noqa: TC001
 
 
@@ -28,6 +29,7 @@ class AdapterConfig(BaseModel):
     auth_ref: str
     mappings: list[FieldMapping]
     sync: SyncConfig
+    actions: list[ActionConfig] = Field(default_factory=list)
     verified_by: str | None = None
     verified_at: datetime | None = None
     version: int = 1

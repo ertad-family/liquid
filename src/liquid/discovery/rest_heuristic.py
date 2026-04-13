@@ -101,9 +101,12 @@ class RESTHeuristicDiscovery:
                 content=(
                     "You are an API analyst. Given probe results from an unknown REST API, "
                     "identify the likely endpoints, HTTP methods, and data structure. "
+                    "Include both read (GET) and write (POST/PUT/PATCH/DELETE) endpoints. "
+                    "For write endpoints, include the expected request body schema. "
                     "Respond with a JSON object containing: service_name (string), "
-                    "endpoints (array of {path, method, description}), "
-                    "auth_type (oauth2|api_key|bearer|basic|custom)."
+                    "endpoints (array of {path, method, description, request_schema}), "
+                    "auth_type (oauth2|api_key|bearer|basic|custom). "
+                    "request_schema should be a JSON Schema object for write endpoints, null for GET."
                 ),
             ),
             Message(
