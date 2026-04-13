@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from liquid.models.schema import AuthRequirement, Endpoint
+from liquid.models.schema import AuthRequirement, Endpoint, EndpointKind
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +44,18 @@ def parse_llm_endpoints_response(
     endpoints: list[Endpoint] = []
     for ep in data.get("endpoints", []):
         if isinstance(ep, dict) and "path" in ep:
+            method = ep.get("method", "GET").upper()
+            kind = _method_to_kind(method)
+            request_schema = ep.get("request_schema")
+            if isinstance(request_schema, dict) and not request_schema:
+                request_schema = None
             endpoints.append(
                 Endpoint(
                     path=ep["path"],
-                    method=ep.get("method", "GET").upper(),
+                    method=method,
                     description=ep.get("description", ""),
+                    kind=kind,
+                    request_schema=request_schema if isinstance(request_schema, dict) else None,
                 )
             )
 
@@ -74,6 +81,17 @@ def parse_llm_endpoints_response(
     service_name = data.get("service_name") or infer_service_name(url)
 
     return service_name, endpoints, AuthRequirement(type=auth_type, tier=tier)
+
+
+def _method_to_kind(method: str) -> EndpointKind:
+    """Map HTTP method to EndpointKind."""
+    match method.upper():
+        case "POST" | "PUT" | "PATCH":
+            return EndpointKind.WRITE
+        case "DELETE":
+            return EndpointKind.DELETE
+        case _:
+            return EndpointKind.READ
 
 
 @asynccontextmanager

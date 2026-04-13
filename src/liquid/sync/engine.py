@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 from liquid.events import ReDiscoveryNeeded, SyncCompleted, SyncFailed
 from liquid.exceptions import SyncRuntimeError
-from liquid.models import SyncResult
-from liquid.models.sync import SyncError, SyncErrorType
+from liquid.models.sync import SyncError, SyncErrorType, SyncResult
 from liquid.sync.fetcher import Fetcher  # noqa: TC001
 from liquid.sync.mapper import RecordMapper  # noqa: TC001
 from liquid.sync.retry import RetryPolicy, with_retry
