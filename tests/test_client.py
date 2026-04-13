@@ -2,7 +2,7 @@ import httpx
 
 from liquid._defaults import CollectorSink, InMemoryVault
 from liquid.client import Liquid
-from liquid.models.adapter import FieldMapping, SyncConfig
+from liquid.models.adapter import AdapterConfig, FieldMapping, SyncConfig
 from liquid.models.llm import LLMResponse, Message, Tool
 from liquid.models.schema import APISchema, AuthRequirement, Endpoint
 
@@ -129,3 +129,89 @@ class TestLiquidMappings:
         mappings = review.finalize()
         assert len(mappings) == 1
         assert mappings[0].target_field == "pet_name"
+
+
+class TestLiquidRepairAdapter:
+    async def test_no_breaking_changes_returns_updated_config(self):
+        """If API hasn't changed, repair returns config with updated schema."""
+        spec = _petstore_spec()
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json=spec) if req.url.path == "/openapi.json" else httpx.Response(404)
+        )
+        schema = APISchema(
+            source_url="https://petstore.example.com",
+            service_name="Petstore",
+            discovery_method="openapi",
+            endpoints=[Endpoint(path="/pets", method="GET")],
+            auth=AuthRequirement(type="bearer", tier="A"),
+        )
+        config = AdapterConfig(
+            schema=schema,
+            auth_ref="vault/key",
+            mappings=[FieldMapping(source_path="name", target_field="pet_name")],
+            sync=SyncConfig(endpoints=["/pets"]),
+            version=1,
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            liquid = Liquid(llm=FakeLLM(), vault=InMemoryVault(), sink=CollectorSink(), http_client=client)
+            result = await liquid.repair_adapter(config, {"pet_name": "str"}, auto_approve=True)
+
+        assert isinstance(result, AdapterConfig)
+        assert result.version == 2
+
+    async def test_breaking_changes_returns_review(self):
+        """If API changed with breaking fields, returns MappingReview."""
+        new_spec = {
+            "openapi": "3.0.3",
+            "info": {"title": "Petstore", "version": "2.0.0"},
+            "paths": {
+                "/pets": {
+                    "get": {
+                        "summary": "List pets v2",
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"pet_name": {"type": "string"}},
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+            "components": {"securitySchemes": {"b": {"type": "http", "scheme": "bearer"}}},
+        }
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json=new_spec) if req.url.path == "/openapi.json" else httpx.Response(404)
+        )
+        old_schema = APISchema(
+            source_url="https://petstore.example.com",
+            service_name="Petstore",
+            discovery_method="openapi",
+            endpoints=[
+                Endpoint(
+                    path="/pets",
+                    method="GET",
+                    response_schema={"type": "object", "properties": {"name": {"type": "string"}}},
+                ),
+            ],
+            auth=AuthRequirement(type="bearer", tier="A"),
+        )
+        config = AdapterConfig(
+            schema=old_schema,
+            auth_ref="vault/key",
+            mappings=[FieldMapping(source_path="name", target_field="pet_name")],
+            sync=SyncConfig(endpoints=["/pets"]),
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            liquid = Liquid(llm=FakeLLM("[]"), vault=InMemoryVault(), sink=CollectorSink(), http_client=client)
+            result = await liquid.repair_adapter(config, {"pet_name": "str"}, auto_approve=False)
+
+        from liquid.mapping.reviewer import MappingReview
+
+        assert isinstance(result, MappingReview)
