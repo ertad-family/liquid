@@ -263,6 +263,40 @@ On persistent failure (configurable threshold), Liquid emits a `ReDiscoveryNeede
 - Notify a human
 - Disable the adapter until manually reviewed
 
+### Automatic Adapter Repair
+
+When an API changes, `Liquid.repair_adapter()` handles the full repair flow in one call:
+
+```python
+result = await liquid.repair_adapter(
+    config=broken_config,
+    target_model=my_model,
+    auto_approve=True,           # auto-approve if confidence is high
+    confidence_threshold=0.8,
+)
+```
+
+The flow:
+1. Re-discovers the API at the original URL
+2. Diffs old schema vs new schema (`SchemaDiff`)
+3. If no breaking changes → returns updated config (no re-mapping needed)
+4. If breaking changes → selectively re-maps only broken fields (preserves working mappings)
+5. Returns `AdapterConfig` (if auto-approved) or `MappingReview` (for human review)
+
+For fully automated repair, use `AutoRepairHandler`:
+
+```python
+from liquid.sync import AutoRepairHandler
+
+handler = AutoRepairHandler(
+    liquid=client,
+    target_model=my_model,
+    config_provider=lambda: current_config,
+    on_repair=my_callback,
+    auto_approve=True,
+)
+```
+
 ---
 
 ## Project Boundaries

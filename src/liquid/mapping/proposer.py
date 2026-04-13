@@ -25,7 +25,17 @@ class MappingProposer:
         self,
         schema: APISchema,
         target_model: dict[str, Any],
+        existing_mappings: list[FieldMapping] | None = None,
+        removed_fields: list[str] | None = None,
     ) -> list[FieldMapping]:
+        if existing_mappings and removed_fields is not None:
+            return await self._selective_repropose(
+                schema,
+                target_model,
+                existing_mappings,
+                set(removed_fields),
+            )
+
         if self.knowledge:
             known = await self.knowledge.find_mapping(schema.service_name, json.dumps(target_model))
             if known:
@@ -33,6 +43,40 @@ class MappingProposer:
                 return known
 
         return await self._propose_with_llm(schema, target_model)
+
+    async def _selective_repropose(
+        self,
+        schema: APISchema,
+        target_model: dict[str, Any],
+        existing: list[FieldMapping],
+        removed: set[str],
+    ) -> list[FieldMapping]:
+        kept: list[FieldMapping] = []
+        broken_targets: list[str] = []
+
+        for m in existing:
+            if m.source_path in removed:
+                broken_targets.append(m.target_field)
+                logger.info("Mapping %s → %s dropped (field removed)", m.source_path, m.target_field)
+            else:
+                kept.append(
+                    FieldMapping(
+                        source_path=m.source_path,
+                        target_field=m.target_field,
+                        transform=m.transform,
+                        confidence=1.0,
+                    )
+                )
+
+        if broken_targets:
+            new_proposals = await self._propose_with_llm(schema, target_model)
+            for proposal in new_proposals:
+                if proposal.target_field in broken_targets and not any(
+                    k.target_field == proposal.target_field for k in kept
+                ):
+                    kept.append(proposal)
+
+        return kept
 
     async def _propose_with_llm(
         self,
