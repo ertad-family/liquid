@@ -10,6 +10,7 @@ from liquid.auth.classifier import AuthClassifier, EscalationInfo
 from liquid.auth.manager import AuthManager
 from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
+from liquid.discovery.diff import diff_schemas
 from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
@@ -131,6 +132,68 @@ class Liquid:
         finally:
             if not self._http_client:
                 await client.aclose()
+
+    async def repair_adapter(
+        self,
+        config: AdapterConfig,
+        target_model: dict[str, Any],
+        auto_approve: bool = False,
+        confidence_threshold: float = 0.8,
+    ) -> AdapterConfig | MappingReview:
+        """Re-discover API, diff schemas, selectively re-map broken fields.
+
+        Returns AdapterConfig if auto_approve=True and all mappings are confident,
+        otherwise returns MappingReview for human review.
+        """
+        from liquid.events import AdapterRepaired
+
+        new_schema = await self.discover(config.schema_.source_url)
+        diff = diff_schemas(config.schema_, new_schema)
+
+        if not diff.has_breaking_changes:
+            updated = config.model_copy(update={"schema_": new_schema, "version": config.version + 1})
+            if self.event_handler:
+                await self.event_handler.handle(
+                    AdapterRepaired(
+                        adapter_id=config.config_id,
+                        diff=diff,
+                        auto_approved=True,
+                    )
+                )
+            return updated
+
+        proposals = await self._mapping_proposer.propose(
+            new_schema,
+            target_model,
+            existing_mappings=config.mappings,
+            removed_fields=diff.removed_fields,
+        )
+
+        review = MappingReview(proposals)
+
+        if auto_approve and all(m.confidence >= confidence_threshold for m in proposals):
+            review.approve_all()
+            mappings = review.finalize()
+            updated = AdapterConfig(
+                config_id=config.config_id,
+                schema=new_schema,
+                auth_ref=config.auth_ref,
+                mappings=mappings,
+                sync=config.sync,
+                verified_by=config.verified_by,
+                version=config.version + 1,
+            )
+            if self.event_handler:
+                await self.event_handler.handle(
+                    AdapterRepaired(
+                        adapter_id=config.config_id,
+                        diff=diff,
+                        auto_approved=True,
+                    )
+                )
+            return updated
+
+        return review
 
     async def learn_from_review(
         self,

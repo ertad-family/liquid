@@ -156,3 +156,46 @@ LiquidError
 ├── ReDiscoveryNeededError  — persistent failures threshold exceeded
 └── VaultError              — credential storage failures
 ```
+
+## Auto-Repair on API Changes
+
+Use `AutoRepairHandler` to automatically repair adapters when APIs change:
+
+```python
+from liquid.sync import AutoRepairHandler
+
+# Store your current config somewhere
+current_config = load_config_from_db(adapter_id)
+
+async def on_repair(result):
+    if isinstance(result, AdapterConfig):
+        # Auto-approved — save and resume
+        save_config_to_db(result)
+        print(f"Adapter auto-repaired (v{result.version})")
+    else:
+        # MappingReview — needs human attention
+        notify_admin(f"Adapter needs review: {len(result)} mappings to check")
+
+handler = AutoRepairHandler(
+    liquid=liquid_client,
+    target_model={"amount": "float", "date": "datetime"},
+    config_provider=lambda: load_config_from_db(adapter_id),
+    on_repair=on_repair,
+    auto_approve=True,
+    confidence_threshold=0.8,
+)
+
+# Use as event handler in SyncEngine
+engine = SyncEngine(fetcher=..., mapper=..., sink=..., event_handler=handler)
+```
+
+For manual repair:
+
+```python
+result = await liquid.repair_adapter(config, target_model, auto_approve=False)
+# result is a MappingReview — inspect and approve changes
+for i in range(len(result)):
+    print(f"{result.proposed[i].source_path} → {result.proposed[i].target_field}")
+result.approve_all()
+new_config = await liquid.create_adapter(new_schema, auth_ref, result.finalize(), sync_config)
+```

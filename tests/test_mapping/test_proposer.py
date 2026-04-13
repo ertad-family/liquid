@@ -81,3 +81,55 @@ class TestMappingProposer:
         proposer = MappingProposer(llm=FakeLLM(llm_response), knowledge=None)
         result = await proposer.propose(_make_schema(), {"y": "str"})
         assert len(result) == 1
+
+
+class TestSelectiveRepropose:
+    async def test_keeps_unchanged_mappings(self):
+        existing = [
+            FieldMapping(source_path="id", target_field="id", confidence=0.9),
+            FieldMapping(source_path="name", target_field="name", confidence=0.8),
+        ]
+        proposer = MappingProposer(llm=FakeLLM("[]"))
+        result = await proposer.propose(
+            _make_schema(),
+            {"id": "int", "name": "str"},
+            existing_mappings=existing,
+            removed_fields=[],
+        )
+        assert len(result) == 2
+        assert all(m.confidence == 1.0 for m in result)
+
+    async def test_drops_removed_fields(self):
+        existing = [
+            FieldMapping(source_path="id", target_field="id"),
+            FieldMapping(source_path="old_field", target_field="legacy"),
+        ]
+        proposer = MappingProposer(llm=FakeLLM("[]"))
+        result = await proposer.propose(
+            _make_schema(),
+            {},
+            existing_mappings=existing,
+            removed_fields=["old_field"],
+        )
+        assert len(result) == 1
+        assert result[0].source_path == "id"
+
+    async def test_repropose_for_broken_targets(self):
+        existing = [
+            FieldMapping(source_path="old_price", target_field="amount"),
+        ]
+        llm_response = json.dumps(
+            [
+                {"source_path": "new_price", "target_field": "amount", "confidence": 0.7},
+            ]
+        )
+        proposer = MappingProposer(llm=FakeLLM(llm_response))
+        result = await proposer.propose(
+            _make_schema(),
+            {"amount": "float"},
+            existing_mappings=existing,
+            removed_fields=["old_price"],
+        )
+        assert len(result) == 1
+        assert result[0].source_path == "new_price"
+        assert result[0].confidence == 0.7
