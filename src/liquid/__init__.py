@@ -1,9 +1,10 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from liquid.client import Liquid
 from liquid.exceptions import (
+    ActionNotVerifiedError,
     AuthError,
     AuthSetupError,
     DiscoveryError,
@@ -17,11 +18,19 @@ from liquid.exceptions import (
     VaultError,
 )
 from liquid.models import (
+    ActionConfig,
+    ActionError,
+    ActionErrorType,
+    ActionMapping,
+    ActionResult,
     AdapterConfig,
     APISchema,
     AuthRequirement,
+    BatchErrorPolicy,
+    BatchResult,
     DeliveryResult,
     Endpoint,
+    EndpointKind,
     FieldMapping,
     MappedRecord,
     SyncConfig,
@@ -31,16 +40,25 @@ from liquid.protocols import AdapterRegistry, DataSink, KnowledgeStore, LLMBacke
 
 __all__ = [
     "APISchema",
+    "ActionConfig",
+    "ActionError",
+    "ActionErrorType",
+    "ActionMapping",
+    "ActionNotVerifiedError",
+    "ActionResult",
     "AdapterConfig",
     "AdapterRegistry",
     "AuthError",
     "AuthRequirement",
     "AuthSetupError",
+    "BatchErrorPolicy",
+    "BatchResult",
     "DataSink",
     "DeliveryResult",
     "DiscoveryError",
     "Endpoint",
     "EndpointGoneError",
+    "EndpointKind",
     "FieldMapping",
     "FieldNotFoundError",
     "KnowledgeStore",
