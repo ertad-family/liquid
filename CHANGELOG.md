@@ -2,6 +2,16 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.4.0] - 2026-04-13
+
+### Added
+- **Agent-first repositioning**: "Zapier for AI agents"
+- `AdapterRegistry` protocol — centralized integration storage (get/save/list_all/delete)
+- `InMemoryAdapterRegistry` — default in-memory implementation
+- `Liquid.get_or_create(url, target_model)` — agent says what it needs, Liquid creates or reuses integration
+- `Liquid.fetch(config, endpoint)` — returns mapped dicts directly for agent consumption
+- README rewritten with agent-first narrative, Zapier comparison, `get_or_create()` lead example
+
 ## [0.3.0] - 2026-04-13
 
 ### Added
