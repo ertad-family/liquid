@@ -124,6 +124,40 @@ class TestGetOrCreate:
 
         assert isinstance(result, MappingReview)
 
+    async def test_service_match_reuses_schema(self):
+        """When same service exists with different model, re-map instead of full discover."""
+        registry = InMemoryAdapterRegistry()
+        existing = AdapterConfig(
+            schema=APISchema(
+                source_url="https://api.example.com",
+                service_name="Example",
+                discovery_method="openapi",
+                endpoints=[Endpoint(path="/items")],
+                auth=AuthRequirement(type="bearer", tier="A"),
+            ),
+            auth_ref="vault/example",
+            mappings=[FieldMapping(source_path="price", target_field="cost")],
+            sync=SyncConfig(endpoints=["/items"]),
+        )
+        await registry.save(existing, json.dumps({"cost": "float"}, sort_keys=True))
+
+        llm_response = json.dumps([{"source_path": "price", "target_field": "amount", "confidence": 0.95}])
+        liquid = Liquid(
+            llm=FakeLLM(llm_response),
+            vault=InMemoryVault(),
+            sink=CollectorSink(),
+            registry=registry,
+        )
+        # Different target_model than existing — triggers service match, not exact match
+        result = await liquid.get_or_create(
+            "https://api.example.com",
+            {"amount": "float"},
+            auto_approve=True,
+        )
+        assert isinstance(result, AdapterConfig)
+        assert result.mappings[0].target_field == "amount"
+        # No HTTP calls made — reused existing schema
+
     async def test_raises_without_registry(self):
         liquid = Liquid(llm=FakeLLM(), vault=InMemoryVault(), sink=CollectorSink())
         import pytest
