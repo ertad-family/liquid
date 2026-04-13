@@ -17,7 +17,7 @@ class FieldMapping(BaseModel):
 
 class SyncConfig(BaseModel):
     endpoints: list[str]
-    schedule: str = "0 */6 * * *"
+    schedule: str | None = None
     cursor_field: str | None = None
     batch_size: int = 100
 

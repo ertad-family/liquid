@@ -164,10 +164,33 @@ class Liquid:
 
         target_key = json.dumps(target_model, sort_keys=True)
 
+        # Step 1: Exact match (same URL + same model) → free
         existing = await self.registry.get(url, target_key)
         if existing is not None:
             return existing
 
+        # Step 2: Service match (same service, different model) → re-map only
+        from liquid.discovery.utils import infer_service_name
+
+        service_hint = infer_service_name(url)
+        service_matches = await self.registry.get_by_service(service_hint)
+        if service_matches:
+            template = service_matches[0]
+            proposals = await self._mapping_proposer.propose(template.schema_, target_model)
+            review = MappingReview(proposals)
+            if auto_approve and all(m.confidence >= confidence_threshold for m in proposals):
+                review.approve_all()
+                config = AdapterConfig(
+                    schema=template.schema_,
+                    auth_ref=template.auth_ref,
+                    mappings=review.finalize(),
+                    sync=SyncConfig(endpoints=[ep.path for ep in template.schema_.endpoints]),
+                )
+                await self.registry.save(config, target_key)
+                return config
+            return review
+
+        # Step 3: Full discovery (expensive)
         schema = await self.discover(url)
 
         if credentials:
