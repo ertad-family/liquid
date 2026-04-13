@@ -1,59 +1,86 @@
 <p align="center">
   <h1 align="center">Liquid</h1>
-  <p align="center"><strong>AI discovers APIs. Code syncs data. No adapters to write.</strong></p>
+  <p align="center"><strong>Zapier for AI agents. Connect to any API on the fly.</strong></p>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ertad-family/liquid/actions"><img src="https://img.shields.io/badge/tests-210%20passed-brightgreen" alt="Tests"></a>
+  <a href="https://pypi.org/project/liquid-api/"><img src="https://img.shields.io/pypi/v/liquid-api" alt="PyPI"></a>
+  <a href="https://github.com/ertad-family/liquid/actions"><img src="https://img.shields.io/badge/tests-221%20passed-brightgreen" alt="Tests"></a>
   <a href="https://github.com/ertad-family/liquid/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python">
-  <img src="https://img.shields.io/badge/version-0.2.0-orange" alt="Version">
 </p>
 
 ---
 
-Point Liquid at any URL. AI discovers the API, proposes field mappings to your data model, and generates a deterministic adapter. After human approval, sync runs on schedule with **zero LLM calls**.
+Your AI agent needs data from Shopify. Or Stripe. Or some internal ERP. With Liquid, the agent just says what it needs — Liquid discovers the API, maps the data, and delivers it. No pre-built connectors. No adapters to write. Integrations maintain themselves.
 
-```
-URL  ──→  AI discovers API  ──→  Human verifies mapping  ──→  Deterministic sync
-          (once)                  (one-time review)             (forever, no LLM)
+```python
+from liquid import Liquid
+from liquid._defaults import InMemoryVault, InMemoryAdapterRegistry, CollectorSink
+
+agent = Liquid(llm=my_llm, vault=InMemoryVault(), sink=CollectorSink(),
+               registry=InMemoryAdapterRegistry())
+
+# Agent says: "I need Shopify order data shaped like this"
+adapter = await agent.get_or_create(
+    url="https://api.shopify.com",
+    target_model={"amount": "float", "date": "datetime", "customer": "string"},
+    auto_approve=True,
+)
+
+# Fetch data — mapped to agent's model, ready to use
+orders = await agent.fetch(adapter, "/orders")
+# [{"amount": 99.0, "date": "2024-01-15", "customer": "alice@example.com"}, ...]
 ```
 
 ## The Problem
 
-Connecting to external APIs requires custom code per service. 50 services = 50 adapters. Each with unique endpoints, auth flows, pagination, and data models. Writing and maintaining them doesn't scale.
+AI agents need to connect to external services. Today, each service requires a pre-built connector — custom code for endpoints, auth, pagination, and data mapping. 50 services = 50 connectors. When an API changes, the connector breaks silently.
 
-## The Solution
+## How Liquid Works
 
-```python
-from liquid import Liquid, SyncConfig
-from liquid._defaults import InMemoryVault, CollectorSink
-
-client = Liquid(llm=my_llm, vault=InMemoryVault(), sink=CollectorSink())
-
-# 1. AI discovers the API (once)
-schema = await client.discover("https://api.shopify.com")
-
-# 2. AI proposes field mappings → human reviews
-review = await client.propose_mappings(schema, {"amount": "float", "date": "datetime"})
-review.approve_all()
-
-# 3. Create adapter config
-config = await client.create_adapter(
-    schema=schema,
-    auth_ref="vault/shopify",
-    mappings=review.finalize(),
-    sync_config=SyncConfig(endpoints=["/orders"], schedule="0 */6 * * *"),
-)
-
-# 4. Deterministic sync — no AI, runs forever
-result = await client.sync(config)
-print(f"Synced {result.records_delivered} records")
+```
+Agent: "I need Shopify orders"
+    │
+    ▼
+┌─ Liquid ──────────────────────────────────────────────┐
+│                                                        │
+│  1. Registry check  →  Already connected? Return it.  │
+│                                                        │
+│  2. Discovery        →  MCP / OpenAPI / GraphQL /     │
+│     (AI, once)          REST probe / Browser capture   │
+│                                                        │
+│  3. Field mapping   →  AI maps Shopify fields to      │
+│     (AI, once)          agent's data model             │
+│                                                        │
+│  4. Fetch data      →  Deterministic, zero LLM calls  │
+│     (code, always)                                     │
+│                                                        │
+│  5. API changed?    →  Auto-repair: diff → re-map     │
+│     (self-healing)      only broken fields             │
+└────────────────────────────────────────────────────────┘
+    │
+    ▼
+Agent gets typed data in its own model
 ```
 
-## How Discovery Works
+**AI runs once** during setup. After that — pure code, zero LLM calls, deterministic results.
 
-Liquid tries the cheapest method first, falls through on failure:
+## Why Liquid
+
+**Any API, no connectors** — Give it a URL, it figures out the rest. No YAML configs, no connector marketplace, no waiting for someone to build an integration.
+
+**Agent-native** — Designed for AI agents, not humans clicking in a GUI. Programmatic API, async-first, typed results.
+
+**Self-healing integrations** — `repair_adapter()` diffs schemas and re-maps only broken fields. Working mappings stay untouched. Agents don't break when APIs change.
+
+**Registry** — First agent connects to Shopify → second agent reuses the same integration. No duplicate work.
+
+**Learning** — Corrections improve future proposals. Connect Shopify for the 51st time → mapping is instant.
+
+**Zero runtime AI** — Discovery and mapping use LLM once. Fetching data is pure Python — fast, cheap, predictable.
+
+## Discovery: 5 Strategies, Cheapest First
 
 | Priority | Strategy | When it works | AI needed? |
 |----------|----------|---------------|------------|
@@ -63,69 +90,73 @@ Liquid tries the cheapest method first, falls through on failure:
 | 4 | **REST Heuristic** | REST API without spec | Yes (once) |
 | 5 | **Browser** | No API at all — capture network traffic | Yes (once) |
 
-## Key Features
-
-**Progressive Discovery** — MCP → OpenAPI → GraphQL → REST → Browser. Cheapest first.
-
-**Selective Re-mapping** — When APIs change, `repair_adapter()` diffs schemas and re-maps only broken fields. Working mappings stay untouched.
-
-**Safe Transforms** — Field transforms like `value * -1` or `value.lower()` are evaluated via AST whitelisting. No `eval()`, no injection risk.
-
-**Pluggable Pagination** — Cursor, offset, page number, link header. Each is a strategy, not a switch/case.
-
-**Learning System** — Corrections improve future proposals. Connect Shopify for the 51st time → mapping is instant.
-
-**Auth Classification** — Detects OAuth (Tier A), app registration (Tier B), or manual credentials (Tier C). Returns structured escalation info.
+~70% of modern APIs have OpenAPI or GraphQL — Liquid doesn't even use AI for those.
 
 ## Installation
 
 ```bash
-pip install liquid               # core
-pip install liquid[mcp]          # + MCP server discovery
-pip install liquid[browser]      # + Playwright browser discovery
+pip install liquid-api              # core
+pip install liquid-api[mcp]         # + MCP server discovery
+pip install liquid-api[browser]     # + Playwright browser discovery
 ```
 
-## Architecture
+## Quick Example
 
+```python
+from liquid import Liquid, AdapterRegistry
+from liquid._defaults import InMemoryVault, InMemoryAdapterRegistry, CollectorSink
+
+# Setup — provide your LLM, credential store, data sink, and registry
+liquid = Liquid(
+    llm=my_llm_backend,           # Claude, GPT, Llama — any LLM
+    vault=InMemoryVault(),         # or Postgres, AWS Secrets Manager, etc.
+    sink=CollectorSink(),          # or your database, queue, webhook
+    registry=InMemoryAdapterRegistry(),  # or Postgres, Redis, etc.
+)
+
+# Connect to any service — Liquid handles discovery and mapping
+adapter = await liquid.get_or_create(
+    url="https://api.stripe.com",
+    target_model={"amount": "float", "currency": "string", "status": "string"},
+    credentials={"access_token": "sk_live_..."},
+    auto_approve=True,
+)
+
+# Fetch data — already mapped to your model
+payments = await liquid.fetch(adapter, "/v1/charges")
+
+# API changed? Liquid fixes it
+repaired = await liquid.repair_adapter(adapter, target_model, auto_approve=True)
 ```
-┌─────────────┐    ┌──────────────┐    ┌────────────────┐    ┌─────────────┐
-│  Discovery   │──→│  Auth Setup  │──→│  Field Mapping  │──→│ Sync Engine │
-│  (AI, once)  │   │ (AI + human) │   │ (AI + human)    │   │ (code, loop)│
-└─────────────┘    └──────────────┘    └────────────────┘    └─────────────┘
-```
 
-**Liquid is a library, not a framework.** You control when to discover, how to present mappings, where to store configs, and what to do with synced data.
+## Extension Points
 
-### Extension Points (Protocols)
+Liquid is a library, not a framework. Bring your own implementations:
 
 | Protocol | Purpose | You provide |
 |----------|---------|-------------|
 | `Vault` | Credential storage | Postgres, AWS Secrets Manager, etc. |
 | `LLMBackend` | AI provider | Claude, GPT, Llama, any LLM |
-| `DataSink` | Where data goes | Database, queue, webhook, file |
-| `KnowledgeStore` | Shared mappings | Redis, central registry, or disabled |
-
-## Auto-Repair on API Changes
-
-When an API breaks your adapter:
-
-```python
-result = await client.repair_adapter(config, target_model, auto_approve=True)
-# Re-discovers → diffs schemas → selectively re-maps broken fields
-# Returns updated AdapterConfig or MappingReview for human review
-```
+| `DataSink` | Where fetched data goes | Database, queue, webhook, file |
+| `AdapterRegistry` | Integration storage | Postgres, Redis, file system |
+| `KnowledgeStore` | Shared mapping patterns | Redis, central registry, or disabled |
 
 ## Liquid vs Alternatives
 
-| | Liquid | Airbyte | Nango | Custom code |
-|---|---|---|---|---|
-| **New service** | `discover(url)` | Write connector YAML | Write TypeScript sync | Write adapter from scratch |
-| **AI involvement** | Discovery only, then deterministic | None | AI-generated code | None |
-| **Auth handling** | Classifies & escalates | Per-connector | Managed OAuth | Manual |
-| **When API changes** | `repair_adapter()` | Update connector | Update sync code | Debug & fix |
-| **Runtime LLM calls** | Zero | Zero | Zero | N/A |
-| **Self-hosted** | Yes (library) | Yes (platform) | Yes (platform) | Yes |
-| **License** | AGPL-3.0 | ELv2 | AGPL-3.0 | Yours |
+| | Liquid | Zapier | Airbyte | Nango | Custom code |
+|---|---|---|---|---|---|
+| **Designed for** | AI agents | Humans (GUI) | Data teams | Developers | Developers |
+| **New service** | `get_or_create(url)` | Browse marketplace | Write YAML connector | Write TypeScript | Write adapter |
+| **When API changes** | Self-heals | Breaks silently | Update connector | Update code | Debug manually |
+| **Runtime AI calls** | Zero | N/A | Zero | Zero | N/A |
+| **Integration reuse** | Registry | Per-account | Per-deployment | Per-deployment | None |
+| **License** | AGPL-3.0 | Proprietary | ELv2 | AGPL-3.0 | Yours |
+
+## Open Source + Commercial
+
+**Liquid OSS** (this repo, AGPL-3.0) — the engine. Discovery, mapping, fetching, auto-repair. You run it, you own it.
+
+**Liquid Cloud** (coming soon) — hosted runtime. Pre-built integrations for 100+ services, shared knowledge base, health monitoring dashboard, managed credentials. For teams that want it to just work.
 
 ## Documentation
 
@@ -133,6 +164,7 @@ result = await client.repair_adapter(config, target_model, auto_approve=True)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Extending Liquid](docs/EXTENDING.md)
 - [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
 ## Contributing
 
