@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator  # noqa: TC003
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
+
+import httpx
 
 from liquid.models.schema import AuthRequirement, Endpoint
 
@@ -70,3 +74,16 @@ def parse_llm_endpoints_response(
     service_name = data.get("service_name") or infer_service_name(url)
 
     return service_name, endpoints, AuthRequirement(type=auth_type, tier=tier)
+
+
+@asynccontextmanager
+async def managed_http_client(external: httpx.AsyncClient | None = None) -> AsyncIterator[httpx.AsyncClient]:
+    """Yield the external client if provided, otherwise create and auto-close a new one."""
+    if external:
+        yield external
+    else:
+        client = httpx.AsyncClient()
+        try:
+            yield client
+        finally:
+            await client.aclose()

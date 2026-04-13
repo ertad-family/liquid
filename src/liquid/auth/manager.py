@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -43,8 +44,6 @@ class AuthManager:
                 case "basic":
                     username = await self.vault.get(f"{vault_key}/username")
                     password = await self.vault.get(f"{vault_key}/password")
-                    import base64
-
                     encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
                     return {"Authorization": f"Basic {encoded}"}
                 case _:
