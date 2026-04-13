@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from liquid.exceptions import VaultError
-from liquid.models.adapter import FieldMapping  # noqa: TC001
+from liquid.models.adapter import AdapterConfig, FieldMapping  # noqa: TC001
 from liquid.models.llm import DeliveryResult, MappedRecord
 
 
@@ -56,3 +56,29 @@ class CollectorSink:
     async def deliver(self, records: list[MappedRecord]) -> DeliveryResult:
         self.records.extend(records)
         return DeliveryResult(delivered=len(records))
+
+
+class InMemoryAdapterRegistry:
+    """Dict-based adapter registry for testing."""
+
+    def __init__(self) -> None:
+        self._by_service: dict[str, AdapterConfig] = {}
+        self._by_id: dict[str, AdapterConfig] = {}
+
+    async def get(self, url: str, target_model: str) -> AdapterConfig | None:
+        return self._by_service.get(f"{url}:{target_model}")
+
+    async def save(self, config: AdapterConfig, target_model: str) -> None:
+        key = f"{config.schema_.source_url}:{target_model}"
+        self._by_service[key] = config
+        self._by_id[config.config_id] = config
+
+    async def list_all(self) -> list[AdapterConfig]:
+        return list(self._by_id.values())
+
+    async def delete(self, config_id: str) -> None:
+        config = self._by_id.pop(config_id, None)
+        if config:
+            keys_to_remove = [k for k, v in self._by_service.items() if v.config_id == config_id]
+            for k in keys_to_remove:
+                del self._by_service[k]
