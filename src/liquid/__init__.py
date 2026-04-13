@@ -1,6 +1,6 @@
 """Liquid — AI discovers APIs. Code syncs data. No adapters to write."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from liquid.client import Liquid
 from liquid.exceptions import (
