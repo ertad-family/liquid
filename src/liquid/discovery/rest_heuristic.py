@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import httpx
+import httpx  # noqa: TC002
 
 from liquid.exceptions import DiscoveryError
 from liquid.models.schema import APISchema
@@ -47,20 +47,19 @@ class RESTHeuristicDiscovery:
         self._external_client = http_client
 
     async def discover(self, url: str) -> APISchema | None:
-        client = self._external_client or httpx.AsyncClient()
-        try:
-            found_endpoints = await self._probe_endpoints(client, url)
-            if not found_endpoints:
-                return None
+        from liquid.discovery.utils import managed_http_client
 
-            return await self._interpret_with_llm(url, found_endpoints)
-        except DiscoveryError:
-            raise
-        except Exception as e:
-            raise DiscoveryError(f"REST heuristic discovery failed: {e}") from e
-        finally:
-            if not self._external_client:
-                await client.aclose()
+        async with managed_http_client(self._external_client) as client:
+            try:
+                found_endpoints = await self._probe_endpoints(client, url)
+                if not found_endpoints:
+                    return None
+
+                return await self._interpret_with_llm(url, found_endpoints)
+            except DiscoveryError:
+                raise
+            except Exception as e:
+                raise DiscoveryError(f"REST heuristic discovery failed: {e}") from e
 
     async def _probe_endpoints(
         self,

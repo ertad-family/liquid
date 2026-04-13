@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -193,8 +194,6 @@ class Liquid:
         review: MappingReview,
     ) -> None:
         """Record corrections from a mapping review for future learning."""
-        import json
-
         corrections = review.corrections()
         if corrections:
             await self._mapping_learner.record_corrections(
