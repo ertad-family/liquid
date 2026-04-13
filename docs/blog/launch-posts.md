@@ -4,7 +4,7 @@
 
 **Title:**
 ```
-Show HN: Liquid – Point at a URL, AI discovers the API, code syncs data forever
+Show HN: Liquid – Zapier for AI agents. Connect to any API on the fly (Python, AGPL)
 ```
 
 **Link:** `https://github.com/ertad-family/liquid`
