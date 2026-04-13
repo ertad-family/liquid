@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import httpx
+import httpx  # noqa: TC002
 
 from liquid.exceptions import DiscoveryError
 from liquid.models.schema import (
@@ -51,15 +51,13 @@ class GraphQLDiscovery:
         self._external_client = http_client
 
     async def discover(self, url: str) -> APISchema | None:
-        client = self._external_client or httpx.AsyncClient()
-        try:
+        from liquid.discovery.utils import managed_http_client
+
+        async with managed_http_client(self._external_client) as client:
             introspection = await self._run_introspection(client, url)
             if introspection is None:
                 return None
             return self._parse_introspection(introspection, url)
-        finally:
-            if not self._external_client:
-                await client.aclose()
 
     async def _run_introspection(
         self,
@@ -156,15 +154,11 @@ class GraphQLDiscovery:
             return {"type": "string", "title": name}
         return {"type": "object"}
 
-    def _infer_service_name(self, url: str) -> str:
-        from urllib.parse import urlparse
+    @staticmethod
+    def _infer_service_name(url: str) -> str:
+        from liquid.discovery.utils import infer_service_name
 
-        parsed = urlparse(url)
-        host = parsed.hostname or "unknown"
-        parts = host.split(".")
-        if len(parts) >= 2:
-            return parts[-2].capitalize()
-        return host.capitalize()
+        return infer_service_name(url)
 
 
 def _scalar_to_json_type(name: str) -> str:

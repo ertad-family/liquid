@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import httpx
+import httpx  # noqa: TC002
 
 from liquid.exceptions import DiscoveryError
-from liquid.models.schema import APISchema, AuthRequirement, Endpoint
+from liquid.models.schema import APISchema
 
 if TYPE_CHECKING:
     from liquid.protocols import LLMBackend
@@ -47,20 +47,19 @@ class RESTHeuristicDiscovery:
         self._external_client = http_client
 
     async def discover(self, url: str) -> APISchema | None:
-        client = self._external_client or httpx.AsyncClient()
-        try:
-            found_endpoints = await self._probe_endpoints(client, url)
-            if not found_endpoints:
-                return None
+        from liquid.discovery.utils import managed_http_client
 
-            return await self._interpret_with_llm(url, found_endpoints)
-        except DiscoveryError:
-            raise
-        except Exception as e:
-            raise DiscoveryError(f"REST heuristic discovery failed: {e}") from e
-        finally:
-            if not self._external_client:
-                await client.aclose()
+        async with managed_http_client(self._external_client) as client:
+            try:
+                found_endpoints = await self._probe_endpoints(client, url)
+                if not found_endpoints:
+                    return None
+
+                return await self._interpret_with_llm(url, found_endpoints)
+            except DiscoveryError:
+                raise
+            except Exception as e:
+                raise DiscoveryError(f"REST heuristic discovery failed: {e}") from e
 
     async def _probe_endpoints(
         self,
@@ -117,41 +116,14 @@ class RESTHeuristicDiscovery:
         return self._parse_llm_response(response.content or "{}", url, probed)
 
     def _parse_llm_response(self, content: str, url: str, probed: list[dict]) -> APISchema:
-        import json
+        from liquid.discovery.utils import parse_llm_endpoints_response
 
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            data = {}
-
-        endpoints = []
-        for ep in data.get("endpoints", []):
-            if isinstance(ep, dict) and "path" in ep:
-                endpoints.append(
-                    Endpoint(
-                        path=ep["path"],
-                        method=ep.get("method", "GET").upper(),
-                        description=ep.get("description", ""),
-                    )
-                )
-
-        if not endpoints:
-            endpoints = [
-                Endpoint(path=p["path"], method="GET", description=f"Discovered via probe ({p['status']})")
-                for p in probed
-            ]
-
-        auth_type = data.get("auth_type", "custom")
-        valid_auth_types = {"oauth2", "api_key", "bearer", "basic", "custom"}
-        if auth_type not in valid_auth_types:
-            auth_type = "custom"
-
-        tier = "A" if auth_type in ("oauth2", "bearer") else "C"
+        service_name, endpoints, auth = parse_llm_endpoints_response(content, url, fallback_probes=probed)
 
         return APISchema(
             source_url=url,
-            service_name=data.get("service_name", "Unknown"),
+            service_name=service_name,
             discovery_method="rest_heuristic",
             endpoints=endpoints,
-            auth=AuthRequirement(type=auth_type, tier=tier),
+            auth=auth,
         )

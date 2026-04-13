@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from liquid.exceptions import DiscoveryError
-from liquid.models.schema import APISchema, AuthRequirement, Endpoint
+from liquid.models.schema import APISchema
 
 if TYPE_CHECKING:
     from liquid.protocols import LLMBackend
@@ -126,50 +126,14 @@ class BrowserDiscovery:
         return self._parse_response(response.content or "{}", url, captured)
 
     def _parse_response(self, content: str, url: str, captured: list[dict[str, Any]]) -> APISchema:
-        import json
-        from urllib.parse import urlparse
+        from liquid.discovery.utils import parse_llm_endpoints_response
 
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            data = {}
-
-        endpoints: list[Endpoint] = []
-        for ep in data.get("endpoints", []):
-            if isinstance(ep, dict) and "path" in ep:
-                endpoints.append(
-                    Endpoint(
-                        path=ep["path"],
-                        method=ep.get("method", "GET").upper(),
-                        description=ep.get("description", ""),
-                    )
-                )
-
-        if not endpoints:
-            # Fallback: create endpoints from captured URLs
-            seen_paths: set[str] = set()
-            for c in captured:
-                parsed = urlparse(c["url"])
-                if parsed.path not in seen_paths:
-                    seen_paths.add(parsed.path)
-                    endpoints.append(
-                        Endpoint(
-                            path=parsed.path,
-                            method=c["method"],
-                            description=f"Captured via browser ({c['status']})",
-                        )
-                    )
-
-        auth_type = data.get("auth_type", "custom")
-        valid_types = {"oauth2", "api_key", "bearer", "basic", "custom"}
-        if auth_type not in valid_types:
-            auth_type = "custom"
-        tier = "A" if auth_type in ("oauth2", "bearer") else "C"
+        service_name, endpoints, auth = parse_llm_endpoints_response(content, url, fallback_probes=captured)
 
         return APISchema(
             source_url=url,
-            service_name=data.get("service_name", urlparse(url).hostname or "Unknown"),
+            service_name=service_name,
             discovery_method="browser",
             endpoints=endpoints,
-            auth=AuthRequirement(type=auth_type, tier=tier),
+            auth=auth,
         )
