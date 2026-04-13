@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from liquid.client import Liquid
 from liquid.exceptions import (
