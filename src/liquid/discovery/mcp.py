@@ -17,6 +17,7 @@ from liquid.models.schema import (
     APISchema,
     AuthRequirement,
     Endpoint,
+    EndpointKind,
     Parameter,
     ParameterLocation,
 )
@@ -96,13 +97,17 @@ class MCPDiscovery:
             input_schema = getattr(tool, "inputSchema", None) or {}
 
             params = self._schema_to_parameters(input_schema)
+            kind = _infer_tool_kind(name)
+            request_schema = input_schema if input_schema and input_schema.get("properties") else None
 
             endpoints.append(
                 Endpoint(
                     path=f"/mcp/tools/{name}",
                     method="POST",
                     description=description[:500],
+                    kind=kind,
                     parameters=params,
+                    request_schema=request_schema,
                     response_schema={"type": "object"},
                 )
             )
@@ -153,3 +158,17 @@ class MCPDiscovery:
         from liquid.discovery.utils import infer_service_name
 
         return infer_service_name(url)
+
+
+_WRITE_PREFIXES = ("create_", "update_", "set_", "add_", "upsert_", "put_", "patch_", "post_", "send_", "submit_")
+_DELETE_PREFIXES = ("delete_", "remove_", "destroy_", "drop_", "purge_")
+
+
+def _infer_tool_kind(name: str) -> EndpointKind:
+    """Infer whether an MCP tool is a read, write, or delete operation by name pattern."""
+    lower = name.lower()
+    if any(lower.startswith(p) for p in _DELETE_PREFIXES):
+        return EndpointKind.DELETE
+    if any(lower.startswith(p) for p in _WRITE_PREFIXES):
+        return EndpointKind.WRITE
+    return EndpointKind.READ

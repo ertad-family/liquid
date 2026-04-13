@@ -10,6 +10,7 @@ from liquid.models.schema import (
     APISchema,
     AuthRequirement,
     Endpoint,
+    EndpointKind,
     Parameter,
     ParameterLocation,
 )
@@ -125,18 +126,54 @@ class GraphQLDiscovery:
                     if isinstance(arg, dict)
                 ]
 
+                is_mutation = type_name == mutation_type_name
                 op_type = "query" if type_name == query_type_name else "mutation"
+
+                kind = EndpointKind.WRITE if is_mutation else EndpointKind.READ
+                request_schema = self._build_request_schema(field) if is_mutation else None
+
                 endpoints.append(
                     Endpoint(
                         path=f"/graphql#{op_type}.{name}",
                         method=method,
                         description=field.get("description", "") or "",
+                        kind=kind,
                         parameters=params,
+                        request_schema=request_schema,
                         response_schema=self._type_to_schema(field.get("type", {})),
                     )
                 )
 
         return endpoints
+
+    def _build_request_schema(self, field: dict[str, Any]) -> dict[str, Any] | None:
+        """Build a JSON Schema-like request_schema from mutation arguments."""
+        args = field.get("args", [])
+        if not args:
+            return None
+
+        properties: dict[str, Any] = {}
+        required: list[str] = []
+
+        for arg in args:
+            if not isinstance(arg, dict):
+                continue
+            arg_name = arg.get("name", "")
+            arg_type = arg.get("type", {})
+
+            is_required = arg_type.get("kind") == "NON_NULL"
+            if is_required:
+                required.append(arg_name)
+
+            properties[arg_name] = self._type_to_schema(arg_type)
+
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": properties,
+        }
+        if required:
+            schema["required"] = required
+        return schema
 
     def _type_to_schema(self, gql_type: dict[str, Any]) -> dict[str, Any]:
         kind = gql_type.get("kind", "")

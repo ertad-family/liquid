@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from liquid.models.schema import APISchema, Endpoint, SchemaDiff
+from liquid.models.schema import APISchema, Endpoint, EndpointKind, SchemaDiff
 
 
 def diff_schemas(old: APISchema, new: APISchema) -> SchemaDiff:
@@ -26,7 +26,21 @@ def diff_schemas(old: APISchema, new: APISchema) -> SchemaDiff:
     removed_fields = sorted(old_fields - new_fields)
     unchanged_fields = sorted(old_fields & new_fields)
 
-    has_breaking = bool(removed_endpoints or removed_fields)
+    modified_request_schemas: list[str] = []
+    removed_write_endpoints: list[str] = []
+
+    for k in sorted(old_keys & new_keys):
+        old_ep = old_ep_map[k]
+        new_ep = new_ep_map[k]
+        if old_ep.request_schema != new_ep.request_schema and new_ep.request_schema is not None:
+            modified_request_schemas.append(f"{k[1]} {k[0]}")
+
+    for k in sorted(old_keys - new_keys):
+        old_ep = old_ep_map[k]
+        if old_ep.kind in (EndpointKind.WRITE, EndpointKind.DELETE):
+            removed_write_endpoints.append(f"{k[1]} {k[0]}")
+
+    has_breaking = bool(removed_endpoints or removed_fields or removed_write_endpoints)
 
     return SchemaDiff(
         added_endpoints=added_endpoints,
@@ -35,6 +49,8 @@ def diff_schemas(old: APISchema, new: APISchema) -> SchemaDiff:
         added_fields=added_fields,
         removed_fields=removed_fields,
         unchanged_fields=unchanged_fields,
+        modified_request_schemas=modified_request_schemas,
+        removed_write_endpoints=removed_write_endpoints,
         has_breaking_changes=has_breaking,
     )
 
