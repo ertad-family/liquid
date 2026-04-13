@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -26,6 +27,7 @@ from liquid.sync.mapper import RecordMapper
 
 if TYPE_CHECKING:
     from liquid.events import EventHandler
+    from liquid.models.schema import SchemaDiff
     from liquid.models.sync import SyncResult
     from liquid.protocols import DataSink, KnowledgeStore, LLMBackend, Vault
     from liquid.sync.retry import RetryPolicy
@@ -145,21 +147,13 @@ class Liquid:
         Returns AdapterConfig if auto_approve=True and all mappings are confident,
         otherwise returns MappingReview for human review.
         """
-        from liquid.events import AdapterRepaired
 
         new_schema = await self.discover(config.schema_.source_url)
         diff = diff_schemas(config.schema_, new_schema)
 
         if not diff.has_breaking_changes:
             updated = config.model_copy(update={"schema_": new_schema, "version": config.version + 1})
-            if self.event_handler:
-                await self.event_handler.handle(
-                    AdapterRepaired(
-                        adapter_id=config.config_id,
-                        diff=diff,
-                        auto_approved=True,
-                    )
-                )
+            await self._emit_repair_event(config.config_id, diff)
             return updated
 
         proposals = await self._mapping_proposer.propose(
@@ -173,27 +167,25 @@ class Liquid:
 
         if auto_approve and all(m.confidence >= confidence_threshold for m in proposals):
             review.approve_all()
-            mappings = review.finalize()
             updated = AdapterConfig(
                 config_id=config.config_id,
                 schema=new_schema,
                 auth_ref=config.auth_ref,
-                mappings=mappings,
+                mappings=review.finalize(),
                 sync=config.sync,
                 verified_by=config.verified_by,
                 version=config.version + 1,
             )
-            if self.event_handler:
-                await self.event_handler.handle(
-                    AdapterRepaired(
-                        adapter_id=config.config_id,
-                        diff=diff,
-                        auto_approved=True,
-                    )
-                )
+            await self._emit_repair_event(config.config_id, diff)
             return updated
 
         return review
+
+    async def _emit_repair_event(self, adapter_id: str, diff: SchemaDiff) -> None:
+        if self.event_handler:
+            from liquid.events import AdapterRepaired
+
+            await self.event_handler.handle(AdapterRepaired(adapter_id=adapter_id, diff=diff, auto_approved=True))
 
     async def learn_from_review(
         self,
@@ -202,8 +194,6 @@ class Liquid:
         review: MappingReview,
     ) -> None:
         """Record corrections from a mapping review for future learning."""
-        import json
-
         corrections = review.corrections()
         if corrections:
             await self._mapping_learner.record_corrections(

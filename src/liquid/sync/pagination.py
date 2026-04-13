@@ -52,12 +52,10 @@ class OffsetPagination:
         return {self.offset_param: offset, self.limit_param: self.limit}
 
     def extract_next_cursor(self, response: httpx.Response) -> str | None:
-        data = response.json()
-        records = data if isinstance(data, list) else data.get("data", data.get("results", []))
-        if isinstance(records, list) and len(records) >= self.limit:
-            current_offset = int(response.request.url.params.get(self.offset_param, "0"))
-            return str(current_offset + self.limit)
-        return None
+        if not _has_full_page(response, self.limit):
+            return None
+        current_offset = int(response.request.url.params.get(self.offset_param, "0"))
+        return str(current_offset + self.limit)
 
 
 class PageNumberPagination:
@@ -71,12 +69,10 @@ class PageNumberPagination:
         return {self.page_param: page, self.per_page_param: self.per_page}
 
     def extract_next_cursor(self, response: httpx.Response) -> str | None:
-        data = response.json()
-        records = data if isinstance(data, list) else data.get("data", data.get("results", []))
-        if isinstance(records, list) and len(records) >= self.per_page:
-            current_page = int(response.request.url.params.get(self.page_param, "1"))
-            return str(current_page + 1)
-        return None
+        if not _has_full_page(response, self.per_page):
+            return None
+        current_page = int(response.request.url.params.get(self.page_param, "1"))
+        return str(current_page + 1)
 
 
 class LinkHeaderPagination:
@@ -89,6 +85,13 @@ class LinkHeaderPagination:
         link_header = response.headers.get("link", "")
         match = self._LINK_RE.search(link_header)
         return match.group(1) if match else None
+
+
+def _has_full_page(response: httpx.Response, page_size: int) -> bool:
+    """Check if the response contains a full page of records (more pages likely)."""
+    data = response.json()
+    records = data if isinstance(data, list) else data.get("data", data.get("results", []))
+    return isinstance(records, list) and len(records) >= page_size
 
 
 def _extract_nested(data: dict[str, Any], path: str) -> Any:
