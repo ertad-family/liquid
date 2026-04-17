@@ -34,8 +34,20 @@ All notable changes to Liquid will be documented in this file.
 - `RateLimitApproaching` event
 - BatchExecutor delegates to RateLimiter when present (no double-delay)
 
+### Added (structured errors)
+- `LiquidError` base now supports `recovery_hint`, `auto_repair_available`, `details`
+- `LiquidError.to_dict()` for JSON API serialization
+- `EndpointGoneError.from_response(message, suggested_path?)` classmethod with auto-hint
+- `RateLimitError` now includes `quota_info: QuotaInfo | None`
+- `ActionError.recovery_hint` and `.auto_repair_available` for write failures
+- `SyncError.recovery_hint` and `.auto_repair_available` for read failures
+- Fetcher populates hints for 401/403/404/410/429/5xx automatically
+- ActionExecutor populates hints for all error types
+
 ### Changed
 - Version bumped to 0.6.0
+- `RateLimitError` keeps backward-compat positional signature `(message, retry_after)`
+- All new kwargs are optional with sensible defaults
 
 ## [0.4.0] - 2026-04-13
 

@@ -37,6 +37,79 @@ _GRAPHQL_MUTATION_RE = re.compile(r"^/graphql#mutation\.(.+)$")
 _MCP_TOOL_RE = re.compile(r"^/mcp/tools/(.+)$")
 
 
+def _action_error_for_exception(exc: RateLimitError | ServiceDownError) -> ActionError:
+    """Build an ActionError from a transient exception raised during request send."""
+    if isinstance(exc, RateLimitError):
+        retry_after = exc.retry_after
+        hint = f"Rate limited — retry after {retry_after}s" if retry_after else "Rate limited — backoff and retry"
+        return ActionError(
+            type=ActionErrorType.RATE_LIMIT,
+            message=str(exc),
+            recovery_hint=hint,
+            details={"retry_after": retry_after} if retry_after else None,
+        )
+    return ActionError(
+        type=ActionErrorType.SERVER_ERROR,
+        message=str(exc),
+        recovery_hint="Upstream server error — retry with backoff",
+    )
+
+
+def _action_error_for_status(status_code: int, message: str) -> ActionError:
+    """Build an ActionError with recovery hint appropriate for an HTTP status."""
+    error_type = _STATUS_TO_ERROR.get(status_code, ActionErrorType.SERVER_ERROR)
+    details: dict[str, Any] = {"status": status_code, "body": message}
+
+    if status_code in (401, 403):
+        return ActionError(
+            type=error_type,
+            message=message,
+            recovery_hint="Credentials invalid for this action",
+            details=details,
+        )
+    if status_code == 404:
+        return ActionError(
+            type=error_type,
+            message=message,
+            recovery_hint="Resource not found — check ID or run repair_adapter()",
+            auto_repair_available=True,
+            details=details,
+        )
+    if status_code == 409:
+        return ActionError(
+            type=error_type,
+            message=message,
+            recovery_hint="Resource conflict — check if it already exists or use idempotency_key",
+            details=details,
+        )
+    if status_code == 422:
+        return ActionError(
+            type=error_type,
+            message=message,
+            recovery_hint="Invalid request data — check request_schema requirements",
+            details=details,
+        )
+    if status_code == 400:
+        return ActionError(
+            type=error_type,
+            message=message,
+            recovery_hint="Bad request — check request payload format",
+            details=details,
+        )
+    if status_code >= 500:
+        return ActionError(
+            type=error_type,
+            message=message,
+            recovery_hint="Upstream server error — retry with backoff",
+            details=details,
+        )
+    return ActionError(
+        type=error_type,
+        message=message,
+        details=details,
+    )
+
+
 class ActionExecutor:
     """Executes write actions against external APIs."""
 
@@ -88,6 +161,8 @@ class ActionExecutor:
                 error=ActionError(
                     type=ActionErrorType.VALIDATION_ERROR,
                     message=f"Endpoint {action.endpoint_method} {action.endpoint_path} not found in schema",
+                    recovery_hint="Endpoint missing from schema — run repair_adapter() to re-discover",
+                    auto_repair_available=True,
                 ),
             )
 
@@ -105,6 +180,7 @@ class ActionExecutor:
                         type=ActionErrorType.VALIDATION_ERROR,
                         message="Request validation failed",
                         details={"errors": errors},
+                        recovery_hint="Fix request data to match request_schema requirements",
                     ),
                 )
 
@@ -175,12 +251,7 @@ class ActionExecutor:
                 method=action.endpoint_method,
                 status_code=429 if isinstance(exc, RateLimitError) else 500,
                 success=False,
-                error=ActionError(
-                    type=ActionErrorType.RATE_LIMIT
-                    if isinstance(exc, RateLimitError)
-                    else ActionErrorType.SERVER_ERROR,
-                    message=str(exc),
-                ),
+                error=_action_error_for_exception(exc),
                 idempotency_key=idem_key,
             )
 
@@ -199,17 +270,13 @@ class ActionExecutor:
                 idempotency_key=idem_key,
             )
 
-        error_type = _STATUS_TO_ERROR.get(response.status_code, ActionErrorType.SERVER_ERROR)
         return ActionResult(
             action_id=action.action_id,
             endpoint_path=action.endpoint_path,
             method=action.endpoint_method,
             status_code=response.status_code,
             success=False,
-            error=ActionError(
-                type=error_type,
-                message=response.text[:500],
-            ),
+            error=_action_error_for_status(response.status_code, response.text[:500]),
             idempotency_key=idem_key,
         )
 
@@ -287,12 +354,7 @@ class ActionExecutor:
                 method=action.endpoint_method,
                 status_code=429 if isinstance(exc, RateLimitError) else 500,
                 success=False,
-                error=ActionError(
-                    type=ActionErrorType.RATE_LIMIT
-                    if isinstance(exc, RateLimitError)
-                    else ActionErrorType.SERVER_ERROR,
-                    message=str(exc),
-                ),
+                error=_action_error_for_exception(exc),
                 idempotency_key=idem_key,
             )
 
@@ -315,6 +377,7 @@ class ActionExecutor:
                         type=ActionErrorType.VALIDATION_ERROR,
                         message=gql_errors[0].get("message", "GraphQL error"),
                         details={"errors": gql_errors},
+                        recovery_hint="GraphQL mutation returned errors — check field arguments against schema",
                     ),
                     idempotency_key=idem_key,
                 )
@@ -329,17 +392,14 @@ class ActionExecutor:
                 idempotency_key=idem_key,
             )
 
-        error_type = _STATUS_TO_ERROR.get(response.status_code, ActionErrorType.SERVER_ERROR)
+        gql_message = (resp_body or {}).get("message", response.text[:500]) if resp_body else response.text[:500]
         return ActionResult(
             action_id=action.action_id,
             endpoint_path=action.endpoint_path,
             method=action.endpoint_method,
             status_code=response.status_code,
             success=False,
-            error=ActionError(
-                type=error_type,
-                message=(resp_body or {}).get("message", response.text[:500]) if resp_body else response.text[:500],
-            ),
+            error=_action_error_for_status(response.status_code, gql_message),
             idempotency_key=idem_key,
         )
 
@@ -411,6 +471,7 @@ class ActionExecutor:
                         error=ActionError(
                             type=ActionErrorType.SERVER_ERROR,
                             message=resp_body.get("result", "MCP tool error") if resp_body else "MCP tool error",
+                            recovery_hint="MCP tool returned an error — verify tool arguments",
                         ),
                     )
 
@@ -433,6 +494,7 @@ class ActionExecutor:
                 error=ActionError(
                     type=ActionErrorType.SERVER_ERROR,
                     message=f"MCP tool call failed: {exc}",
+                    recovery_hint="MCP tool call failed — check MCP server connectivity and tool availability",
                 ),
             )
 
@@ -479,12 +541,7 @@ class ActionExecutor:
                 method=action.endpoint_method,
                 status_code=429 if isinstance(exc, RateLimitError) else 500,
                 success=False,
-                error=ActionError(
-                    type=ActionErrorType.RATE_LIMIT
-                    if isinstance(exc, RateLimitError)
-                    else ActionErrorType.SERVER_ERROR,
-                    message=str(exc),
-                ),
+                error=_action_error_for_exception(exc),
             )
 
         if response.is_success:
@@ -501,17 +558,13 @@ class ActionExecutor:
                 response_body=resp_body,
             )
 
-        error_type = _STATUS_TO_ERROR.get(response.status_code, ActionErrorType.SERVER_ERROR)
         return ActionResult(
             action_id=action.action_id,
             endpoint_path=action.endpoint_path,
             method=action.endpoint_method,
             status_code=response.status_code,
             success=False,
-            error=ActionError(
-                type=error_type,
-                message=response.text[:500],
-            ),
+            error=_action_error_for_status(response.status_code, response.text[:500]),
         )
 
 

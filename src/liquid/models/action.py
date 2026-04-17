@@ -22,6 +22,8 @@ class ActionError(BaseModel):
     type: ActionErrorType
     message: str
     details: dict[str, Any] | None = None
+    recovery_hint: str | None = None
+    auto_repair_available: bool = False
 
 
 class ActionMapping(BaseModel):

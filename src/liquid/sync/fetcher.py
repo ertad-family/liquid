@@ -149,17 +149,35 @@ def _check_response(response: httpx.Response) -> None:
     status = response.status_code
     text = response.text[:500]
 
-    if status == 401 or status == 403:
-        raise AuthError(f"Auth failed ({status}): {text}")
+    if status == 401:
+        raise AuthError(
+            f"Auth failed (401): {text}",
+            recovery_hint="Credentials invalid — re-store via store_credentials()",
+            details={"status": 401, "body": text},
+        )
+    if status == 403:
+        raise AuthError(
+            f"Auth forbidden (403): {text}",
+            recovery_hint="Credentials lack permission for this endpoint",
+            details={"status": 403, "body": text},
+        )
     if status == 429:
         retry_after = response.headers.get("retry-after")
         raise RateLimitError(
             f"Rate limited: {text}",
             retry_after=float(retry_after) if retry_after else None,
+            details={"status": 429, "body": text},
         )
     if status == 404 or status == 410:
-        raise EndpointGoneError(f"Endpoint gone ({status}): {text}")
+        raise EndpointGoneError.from_response(
+            f"Endpoint gone ({status}): {text}",
+            details={"status": status, "body": text},
+        )
     if status >= 500:
-        raise ServiceDownError(f"Server error ({status}): {text}")
+        raise ServiceDownError(
+            f"Server error ({status}): {text}",
+            recovery_hint="Upstream service error — retry with backoff",
+            details={"status": status, "body": text},
+        )
 
     response.raise_for_status()

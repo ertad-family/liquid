@@ -22,6 +22,8 @@ class SyncError(BaseModel):
     message: str
     endpoint: str | None = None
     details: dict[str, Any] | None = None
+    recovery_hint: str | None = None
+    auto_repair_available: bool = False
 
 
 class SyncResult(BaseModel):
