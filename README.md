@@ -1,175 +1,251 @@
-<p align="center">
-  <h1 align="center">Liquid</h1>
-  <p align="center"><strong>Zapier for AI agents. Connect to any API on the fly.</strong></p>
-</p>
+# Liquid
 
-<p align="center">
-  <a href="https://pypi.org/project/liquid-api/"><img src="https://img.shields.io/pypi/v/liquid-api" alt="PyPI"></a>
-  <a href="https://github.com/ertad-family/liquid/actions"><img src="https://img.shields.io/badge/tests-221%20passed-brightgreen" alt="Tests"></a>
-  <a href="https://github.com/ertad-family/liquid/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License"></a>
-  <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python">
-</p>
+**The reliable API fabric for AI agents.**
+
+Connect any agent to any API in 2 minutes. Framework-native. Deterministic runtime. Self-healing integrations.
+
+[![PyPI](https://img.shields.io/pypi/v/liquid-api.svg)](https://pypi.org/project/liquid-api/)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/ertad-family/liquid/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
 ---
 
-Your AI agent needs data from Shopify. Or Stripe. Or some internal ERP. With Liquid, the agent just says what it needs — Liquid discovers the API, maps the data, and delivers it. No pre-built connectors. No adapters to write. Integrations maintain themselves.
-
-```python
-from liquid import Liquid
-from liquid._defaults import InMemoryVault, InMemoryAdapterRegistry, CollectorSink
-
-agent = Liquid(llm=my_llm, vault=InMemoryVault(), sink=CollectorSink(),
-               registry=InMemoryAdapterRegistry())
-
-# Agent says: "I need Shopify order data shaped like this"
-adapter = await agent.get_or_create(
-    url="https://api.shopify.com",
-    target_model={"amount": "float", "date": "datetime", "customer": "string"},
-    auto_approve=True,
-)
-
-# Fetch data — mapped to agent's model, ready to use
-orders = await agent.fetch(adapter, "/orders")
-# [{"amount": 99.0, "date": "2024-01-15", "customer": "alice@example.com"}, ...]
-```
-
-## The Problem
-
-AI agents need to connect to external services. Today, each service requires a pre-built connector — custom code for endpoints, auth, pagination, and data mapping. 50 services = 50 connectors. When an API changes, the connector breaks silently.
-
-## How Liquid Works
-
-```
-Agent: "I need Shopify orders"
-    │
-    ▼
-┌─ Liquid ──────────────────────────────────────────────┐
-│                                                        │
-│  1. Registry check  →  Already connected? Return it.  │
-│                                                        │
-│  2. Discovery        →  MCP / OpenAPI / GraphQL /     │
-│     (AI, once)          REST probe / Browser capture   │
-│                                                        │
-│  3. Field mapping   →  AI maps Shopify fields to      │
-│     (AI, once)          agent's data model             │
-│                                                        │
-│  4. Fetch data      →  Deterministic, zero LLM calls  │
-│     (code, always)                                     │
-│                                                        │
-│  5. API changed?    →  Auto-repair: diff → re-map     │
-│     (self-healing)      only broken fields             │
-└────────────────────────────────────────────────────────┘
-    │
-    ▼
-Agent gets typed data in its own model
-```
-
-**AI runs once** during setup. After that — pure code, zero LLM calls, deterministic results.
-
 ## Why Liquid
 
-**Any API, no connectors** — Give it a URL, it figures out the rest. No YAML configs, no connector marketplace, no waiting for someone to build an integration.
+**Building AI agents that use real APIs is broken.** Every new API = a new connector. Every schema change = a 3am pager. Every agent framework needs its own integration layer.
 
-**Agent-native** — Designed for AI agents, not humans clicking in a GUI. Programmatic API, async-first, typed results.
+Liquid fixes this:
+- **Agent-native**: `to_tools(format="anthropic"|"openai"|"langchain"|"mcp")` — one call, any framework
+- **Deterministic runtime**: AI only at setup. Runtime is pure HTTP — no surprise bills, no flakiness
+- **Self-healing**: periodic health checks + auto-repair when upstream schemas change
+- **Fast**: response caching + proactive rate limiting built in
+- **2,500+ pre-discovered APIs** in the global catalog (Stripe, GitHub, Shopify, Slack, Jira...)
 
-**Self-healing integrations** — `repair_adapter()` diffs schemas and re-maps only broken fields. Working mappings stay untouched. Agents don't break when APIs change.
-
-**Registry** — First agent connects to Shopify → second agent reuses the same integration. No duplicate work.
-
-**Learning** — Corrections improve future proposals. Connect Shopify for the 51st time → mapping is instant.
-
-**Zero runtime AI** — Discovery and mapping use LLM once. Fetching data is pure Python — fast, cheap, predictable.
-
-## Discovery: 5 Strategies, Cheapest First
-
-| Priority | Strategy | When it works | AI needed? |
-|----------|----------|---------------|------------|
-| 1 | **MCP** | Service publishes an MCP server | No |
-| 2 | **OpenAPI** | Has `/openapi.json` or `/swagger.json` | No |
-| 3 | **GraphQL** | Has `/graphql` with introspection | No |
-| 4 | **REST Heuristic** | REST API without spec | Yes (once) |
-| 5 | **Browser** | No API at all — capture network traffic | Yes (once) |
-
-~70% of modern APIs have OpenAPI or GraphQL — Liquid doesn't even use AI for those.
-
-## Installation
+## Install
 
 ```bash
-pip install liquid-api              # core
-pip install liquid-api[mcp]         # + MCP server discovery
-pip install liquid-api[browser]     # + Playwright browser discovery
+pip install liquid-api
+# Plus framework integration:
+pip install liquid-langchain   # or liquid-crewai
 ```
 
-## Quick Example
+## Quick example: LangChain agent
 
 ```python
-from liquid import Liquid, AdapterRegistry
+from liquid import Liquid, InMemoryCache, RateLimiter
 from liquid._defaults import InMemoryVault, InMemoryAdapterRegistry, CollectorSink
+from liquid_langchain import LiquidToolkit
 
-# Setup — provide your LLM, credential store, data sink, and registry
+# Setup Liquid with caching + rate limits (both optional but recommended for agents)
 liquid = Liquid(
-    llm=my_llm_backend,           # Claude, GPT, Llama — any LLM
-    vault=InMemoryVault(),         # or Postgres, AWS Secrets Manager, etc.
-    sink=CollectorSink(),          # or your database, queue, webhook
-    registry=InMemoryAdapterRegistry(),  # or Postgres, Redis, etc.
+    llm=my_llm,
+    vault=InMemoryVault(),
+    sink=CollectorSink(),
+    registry=InMemoryAdapterRegistry(),
+    cache=InMemoryCache(),
+    rate_limiter=RateLimiter(),
 )
 
-# Connect to any service — Liquid handles discovery and mapping
+# Connect to Shopify — AI discovers API, maps fields
 adapter = await liquid.get_or_create(
-    url="https://api.stripe.com",
-    target_model={"amount": "float", "currency": "string", "status": "string"},
-    credentials={"access_token": "sk_live_..."},
+    "https://api.shopify.com",
+    target_model={"id": "str", "total_price": "float", "customer_email": "str"},
+    credentials={"access_token": "shpat_..."},
     auto_approve=True,
 )
 
-# Fetch data — already mapped to your model
-payments = await liquid.fetch(adapter, "/v1/charges")
+# Give tools to any LangChain agent
+toolkit = LiquidToolkit(adapter, liquid)
+tools = toolkit.get_tools()
+# ['list_orders', 'get_orders', 'create_orders', 'update_orders', 'delete_orders']
 
-# API changed? Liquid fixes it
+# Use with LangGraph
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+agent = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools)
+result = await agent.ainvoke({"messages": [("user", "List 5 recent orders over $100")]})
+```
+
+Your agent now has:
+- Cached responses (no API hammering)
+- Proactive rate limiting (auto-throttle before 429)
+- Structured errors with `recovery_hint` for self-healing
+- Automatic retries with backoff
+- Idempotency for writes
+
+## More frameworks
+
+```python
+# Claude / Anthropic tool use
+tools = adapter.to_tools(format="anthropic")
+
+# OpenAI function calling
+tools = adapter.to_tools(format="openai")
+
+# MCP (Claude Desktop, Cursor, etc.)
+tools = adapter.to_tools(format="mcp")
+
+# CrewAI
+from liquid_crewai import LiquidCrewToolkit
+tools = LiquidCrewToolkit(adapter, liquid).get_tools()
+```
+
+## How it works
+
+```
+URL                Agent
+ ↓                    ↑
+ DISCOVERY         FETCH / EXECUTE
+ ↓                    ↑
+ MCP → OpenAPI → GraphQL → REST heuristic → Browser
+          ↓
+       APISchema (endpoints, auth, schemas)
+          ↓
+ AI MAPPING   (AI proposes field mappings, human reviews)
+          ↓
+       AdapterConfig
+          ↓
+ RUNTIME    (pure HTTP, deterministic, cached, rate-limited)
+```
+
+**AI participates at setup only.** Once an adapter is configured, runtime is:
+- Deterministic HTTP calls
+- No LLM invocations per fetch/execute
+- Predictable cost
+- Reproducible behavior
+
+## Examples
+
+- [`examples/langchain_agent.py`](examples/langchain_agent.py) — LangGraph ReAct agent using Shopify
+- [`examples/anthropic_tools.py`](examples/anthropic_tools.py) — Claude tool-use loop
+- [`examples/openai_agents.py`](examples/openai_agents.py) — OpenAI Assistants with Liquid
+
+## Ecosystem
+
+| Package | Purpose |
+|---|---|
+| [`liquid-api`](https://pypi.org/project/liquid-api/) | Core library (this repo) |
+| [`liquid-langchain`](https://pypi.org/project/liquid-langchain/) | LangChain/LangGraph integration |
+| [`liquid-crewai`](https://pypi.org/project/liquid-crewai/) | CrewAI integration |
+| [`liquid-cli`](https://pypi.org/project/liquid-cli/) | `liquid init` quickstart CLI |
+| [Liquid Cloud](https://liquid.ertad.family) | Hosted service + global catalog |
+
+## Key features
+
+### Agent-first API
+```python
+# Every adapter becomes tools for any framework
+tools = adapter.to_tools(format="anthropic")
+```
+
+### Response caching
+```python
+# Per-call TTL
+data = await liquid.fetch(adapter, "/users/me", cache="5m")
+
+# Per-endpoint defaults
+adapter.sync.cache_ttl = {"/users/me": 300}
+
+# Respects Cache-Control headers automatically
+```
+
+### Proactive rate limiting
+```python
+# Self-throttles before hitting 429
+quota = await liquid.remaining_quota(adapter)
+# QuotaInfo(remaining=42, limit=100, reset_at=...)
+
+# Parses X-RateLimit-*, RateLimit-* (IETF), Retry-After automatically
+```
+
+### Structured errors
+```python
+try:
+    await liquid.fetch(adapter, "/old-endpoint")
+except EndpointGoneError as e:
+    print(e.recovery_hint)  # "Try /v2/old-endpoint (endpoint may have moved)"
+    if e.auto_repair_available:
+        await liquid.repair_adapter(adapter, target_model)
+```
+
+### Write operations
+```python
+# Create order
+result = await liquid.execute(
+    adapter, action_id="create_order",
+    data={"amount": 99.99, "email": "c@example.com"},
+)
+
+# Batch with concurrency + rate-limit awareness
+results = await liquid.execute_batch(
+    adapter, "create_order",
+    items=[{"amount": 10}, {"amount": 20}, ...],
+    concurrency=5,
+)
+```
+
+### Self-healing
+```python
+# Periodic health checks via AutoRepairHandler
+# Auto-repair when upstream schema changes:
 repaired = await liquid.repair_adapter(adapter, target_model, auto_approve=True)
 ```
 
-## Extension Points
+## Discovery pipeline
 
-Liquid is a library, not a framework. Bring your own implementations:
+Liquid tries discovery methods in order, cheapest first:
 
-| Protocol | Purpose | You provide |
-|----------|---------|-------------|
-| `Vault` | Credential storage | Postgres, AWS Secrets Manager, etc. |
-| `LLMBackend` | AI provider | Claude, GPT, Llama, any LLM |
-| `DataSink` | Where fetched data goes | Database, queue, webhook, file |
-| `AdapterRegistry` | Integration storage | Postgres, Redis, file system |
-| `KnowledgeStore` | Shared mapping patterns | Redis, central registry, or disabled |
+| Method | Where it looks | Cost |
+|---|---|---|
+| MCP | `/mcp` | Low (native protocol) |
+| OpenAPI | `/openapi.json`, `/swagger.json`, `/v3/api-docs` | Low |
+| GraphQL | `/graphql` (introspection) | Low |
+| REST heuristic | common paths + LLM interpretation | Medium |
+| Browser | Playwright capturing network | High |
 
-## Liquid vs Alternatives
+## Protocols
 
-| | Liquid | Zapier | Airbyte | Nango | Custom code |
-|---|---|---|---|---|---|
-| **Designed for** | AI agents | Humans (GUI) | Data teams | Developers | Developers |
-| **New service** | `get_or_create(url)` | Browse marketplace | Write YAML connector | Write TypeScript | Write adapter |
-| **When API changes** | Self-heals | Breaks silently | Update connector | Update code | Debug manually |
-| **Runtime AI calls** | Zero | N/A | Zero | Zero | N/A |
-| **Integration reuse** | Registry | Per-account | Per-deployment | Per-deployment | None |
-| **License** | AGPL-3.0 | Proprietary | ELv2 | AGPL-3.0 | Yours |
+All key components are `Protocol` interfaces — swap in your own:
 
-## Open Source + Commercial
+```python
+from liquid.protocols import Vault, LLMBackend, DataSink, KnowledgeStore, AdapterRegistry, CacheStore
+```
 
-**Liquid OSS** (this repo, AGPL-3.0) — the engine. Discovery, mapping, fetching, auto-repair. You run it, you own it.
-
-**Liquid Cloud** (coming soon) — hosted runtime. Pre-built integrations for 100+ services, shared knowledge base, health monitoring dashboard, managed credentials. For teams that want it to just work.
+Built-in implementations:
+- `InMemoryVault`, `InMemoryAdapterRegistry`, `InMemoryKnowledgeStore`, `InMemoryCache`, `CollectorSink`
+- Cloud implementations: `PostgresVault`, `RedisCache`, etc. (in `liquid-cloud`)
 
 ## Documentation
 
-- [Quick Start Guide](docs/QUICKSTART.md)
+- [Quickstart](docs/QUICKSTART.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Extending Liquid](docs/EXTENDING.md)
-- [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md)
+- [Extending](docs/EXTENDING.md) — implement your own Vault / LLM / etc.
+- [Write operations spec](docs/SPEC-WRITE-OPERATIONS.md)
 
-## Contributing
+## Comparison
 
-We welcome contributions! Check out our [contributing guide](CONTRIBUTING.md) and browse [good first issues](https://github.com/ertad-family/liquid/labels/good%20first%20issue).
+| Feature | Liquid | Zapier | Firecrawl | DIY |
+|---|---|---|---|---|
+| API discovery | yes | no | partial | no |
+| Write operations | yes | yes | no | yes |
+| Self-healing | yes | no | no | no |
+| Native MCP + A2A + LangChain + CrewAI | yes | no | no | no |
+| Open source | yes | no | yes | n/a |
+| Works with ANY API | yes | partial | no | yes |
 
 ## License
 
-AGPL-3.0. Commercial licenses available — [contact us](mailto:hello@ertad.com).
+AGPL-3.0. Commercial license available for closed-source deployments — contact `hello@ertad.com`.
+
+## Contributing
+
+- [Good first issues](https://github.com/ertad-family/liquid/labels/good%20first%20issue)
+- [Contributing guide](CONTRIBUTING.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+
+## Community
+
+- [Dashboard](https://liquid.ertad.family/dashboard)
+- [Catalog](https://liquid.ertad.family/catalog)
+- [GitHub Discussions](https://github.com/ertad-family/liquid/discussions)
