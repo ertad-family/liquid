@@ -104,8 +104,8 @@ class OpenAPIDiscovery:
                     continue
 
                 params = self._extract_parameters(path_item.get("parameters", []) + operation.get("parameters", []))
-                response_schema = self._extract_response_schema(operation, is_v3)
-                request_schema = self._extract_request_schema(operation, is_v3)
+                response_schema = _resolve_refs(self._extract_response_schema(operation, is_v3), spec)
+                request_schema = _resolve_refs(self._extract_request_schema(operation, is_v3), spec)
                 description = operation.get("summary", operation.get("description", ""))
                 pagination = self._infer_pagination(params)
                 kind = self._method_to_kind(method)
@@ -249,3 +249,45 @@ class OpenAPIDiscovery:
         if "page" in param_names or "page_number" in param_names:
             return PaginationType.PAGE_NUMBER
         return None
+
+
+def _resolve_refs(schema: dict[str, Any] | None, spec: dict[str, Any], depth: int = 10) -> dict[str, Any] | None:
+    """Recursively resolve $ref pointers in a JSON Schema against the OpenAPI spec.
+
+    Handles both OpenAPI 3.x (#/components/schemas/...) and Swagger 2.0 (#/definitions/...).
+    Stops at *depth* to avoid infinite recursion on circular references.
+    """
+    if schema is None or not isinstance(schema, dict) or depth <= 0:
+        return schema
+
+    ref = schema.get("$ref")
+    if ref and isinstance(ref, str):
+        resolved = _lookup_ref(ref, spec)
+        if resolved is not None:
+            return _resolve_refs(resolved, spec, depth - 1)
+        return {}
+
+    result: dict[str, Any] = {}
+    for key, value in schema.items():
+        if isinstance(value, dict):
+            result[key] = _resolve_refs(value, spec, depth - 1)
+        elif isinstance(value, list):
+            result[key] = [_resolve_refs(item, spec, depth - 1) if isinstance(item, dict) else item for item in value]
+        else:
+            result[key] = value
+    return result
+
+
+def _lookup_ref(ref: str, spec: dict[str, Any]) -> dict[str, Any] | None:
+    """Follow a JSON pointer like '#/components/schemas/User' inside the spec."""
+    if not ref.startswith("#/"):
+        return None
+    parts = ref[2:].split("/")
+    current: Any = spec
+    for part in parts:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(part)
+        if current is None:
+            return None
+    return current if isinstance(current, dict) else None
