@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid

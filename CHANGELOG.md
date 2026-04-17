@@ -2,6 +2,22 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.8.0] - 2026-04-17
+
+### Added (opt-in crowdsourced telemetry)
+- `liquid.telemetry` package with `TelemetryCollector` and `anonymize_event`
+- `Liquid(contribute_telemetry=True, telemetry_endpoint=...)` opts in to share anonymized rate-limit observations
+- In-memory buffer with auto-flush at `flush_threshold=100` events (default)
+- Overflow protection: drops oldest events above `max_buffer=1000`
+- Default hub endpoint: `https://liquid.ertad.family/v1/telemetry`
+- Strict anonymization: only hostname, status code, whitelisted rate-limit headers, response time, and timestamp are sent
+- Never sent: credentials, full URLs, query params, request/response bodies, user identifiers
+- `Fetcher(telemetry=...)` records observations after each response
+- Response timing measured via `time.perf_counter()` and reported in ms
+
+### Changed
+- Version bumped to 0.8.0
+
 ## [0.7.0] - 2026-04-17
 
 ### Added (proactive rate limit knowledge)

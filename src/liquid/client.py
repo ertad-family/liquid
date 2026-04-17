@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from liquid.sync.quota import QuotaInfo
     from liquid.sync.rate_limiter import RateLimiter
     from liquid.sync.retry import RetryPolicy
+    from liquid.telemetry import TelemetryCollector
 
 
 class Liquid:
@@ -60,6 +61,8 @@ class Liquid:
         retry_policy: RetryPolicy | None = None,
         cache: CacheStore | None = None,
         rate_limiter: RateLimiter | None = None,
+        contribute_telemetry: bool = False,
+        telemetry_endpoint: str | None = None,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -71,6 +74,14 @@ class Liquid:
         self._retry_policy = retry_policy
         self.cache = cache
         self.rate_limiter = rate_limiter
+
+        self.telemetry: TelemetryCollector | None = None
+        if contribute_telemetry:
+            from liquid.telemetry import TelemetryCollector
+
+            self.telemetry = TelemetryCollector(
+                endpoint=telemetry_endpoint or "https://liquid.ertad.family/v1/telemetry",
+            )
 
         self._auth_classifier = AuthClassifier()
         self._auth_manager = AuthManager(vault)
@@ -175,6 +186,7 @@ class Liquid:
                 vault=self.vault,
                 adapter_id=config.config_id,
                 rate_limiter=self.rate_limiter,
+                telemetry=self.telemetry,
             )
             mapper = RecordMapper(config.mappings)
             engine = SyncEngine(
@@ -336,6 +348,7 @@ class Liquid:
                 adapter_id=config.config_id,
                 cache_ttl_override=cache_ttl_override,
                 rate_limiter=self.rate_limiter,
+                telemetry=self.telemetry,
             )
             result = await fetcher.fetch(
                 endpoint=target_ep,
