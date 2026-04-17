@@ -20,6 +20,7 @@ from liquid.sync.retry import WRITE_RETRY_DEFAULTS, RetryPolicy, with_retry
 if TYPE_CHECKING:
     from liquid.models.schema import APISchema, Endpoint
     from liquid.protocols import Vault
+    from liquid.sync.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,19 @@ class ActionExecutor:
         http_client: httpx.AsyncClient,
         vault: Vault,
         retry_policy: RetryPolicy | None = None,
+        rate_limiter: RateLimiter | None = None,
+        respect_rate_limit: bool = True,
+        adapter_id: str | None = None,
     ) -> None:
         self.http_client = http_client
         self.vault = vault
         self.retry_policy = retry_policy or WRITE_RETRY_DEFAULTS
+        self.rate_limiter = rate_limiter
+        self.respect_rate_limit = respect_rate_limit
+        self.adapter_id = adapter_id
+
+    def _rate_key(self, endpoint_path: str) -> str:
+        return f"{self.adapter_id or 'anon'}:{endpoint_path}"
 
     async def execute(
         self,
@@ -133,13 +143,19 @@ class ActionExecutor:
 
         url = f"{schema.source_url.rstrip('/')}{resolved_path}"
 
+        rate_key = self._rate_key(action.endpoint_path)
+
         async def _send() -> httpx.Response:
+            if self.rate_limiter is not None and self.respect_rate_limit:
+                await self.rate_limiter.acquire(rate_key)
             resp = await self.http_client.request(
                 method=action.endpoint_method,
                 url=url,
                 json=body,
                 headers=headers,
             )
+            if self.rate_limiter is not None:
+                await self.rate_limiter.observe_response(rate_key, resp)
             if resp.status_code == 429:
                 retry_after = resp.headers.get("retry-after")
                 raise RateLimitError(
@@ -239,13 +255,19 @@ class ActionExecutor:
         graphql_path = action.endpoint_path.split("#")[0]
         url = f"{schema.source_url.rstrip('/')}{graphql_path}"
 
+        rate_key = self._rate_key(action.endpoint_path)
+
         async def _send() -> httpx.Response:
+            if self.rate_limiter is not None and self.respect_rate_limit:
+                await self.rate_limiter.acquire(rate_key)
             resp = await self.http_client.request(
                 method="POST",
                 url=url,
                 json=graphql_body,
                 headers=headers,
             )
+            if self.rate_limiter is not None:
+                await self.rate_limiter.observe_response(rate_key, resp)
             if resp.status_code == 429:
                 retry_after = resp.headers.get("retry-after")
                 raise RateLimitError(
@@ -425,13 +447,19 @@ class ActionExecutor:
         """Fallback: execute MCP tool via HTTP POST."""
         url = f"{schema.source_url.rstrip('/')}/mcp/tools/{tool_name}"
 
+        rate_key = self._rate_key(action.endpoint_path)
+
         async def _send() -> httpx.Response:
+            if self.rate_limiter is not None and self.respect_rate_limit:
+                await self.rate_limiter.acquire(rate_key)
             resp = await self.http_client.request(
                 method="POST",
                 url=url,
                 json=arguments,
                 headers={"Content-Type": "application/json"},
             )
+            if self.rate_limiter is not None:
+                await self.rate_limiter.observe_response(rate_key, resp)
             if resp.status_code == 429:
                 retry_after = resp.headers.get("retry-after")
                 raise RateLimitError(

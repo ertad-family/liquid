@@ -38,6 +38,8 @@ from liquid.models import (
     SyncResult,
 )
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
+from liquid.sync.quota import QuotaInfo
+from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
 
 __all__ = [
@@ -71,7 +73,9 @@ __all__ = [
     "LiquidError",
     "MappedRecord",
     "MappingError",
+    "QuotaInfo",
     "RateLimitError",
+    "RateLimiter",
     "ServiceDownError",
     "SyncConfig",
     "SyncResult",

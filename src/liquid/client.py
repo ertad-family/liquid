@@ -36,6 +36,8 @@ if TYPE_CHECKING:
     from liquid.models.schema import Endpoint
     from liquid.models.sync import SyncResult
     from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
+    from liquid.sync.quota import QuotaInfo
+    from liquid.sync.rate_limiter import RateLimiter
     from liquid.sync.retry import RetryPolicy
 
 
@@ -57,6 +59,7 @@ class Liquid:
         http_client: httpx.AsyncClient | None = None,
         retry_policy: RetryPolicy | None = None,
         cache: CacheStore | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -67,6 +70,7 @@ class Liquid:
         self._http_client = http_client
         self._retry_policy = retry_policy
         self.cache = cache
+        self.rate_limiter = rate_limiter
 
         self._auth_classifier = AuthClassifier()
         self._auth_manager = AuthManager(vault)
@@ -138,7 +142,12 @@ class Liquid:
         """Phase 4: Run a deterministic sync cycle."""
         client = self._http_client or httpx.AsyncClient()
         try:
-            fetcher = Fetcher(http_client=client, vault=self.vault)
+            fetcher = Fetcher(
+                http_client=client,
+                vault=self.vault,
+                adapter_id=config.config_id,
+                rate_limiter=self.rate_limiter,
+            )
             mapper = RecordMapper(config.mappings)
             engine = SyncEngine(
                 fetcher=fetcher,
@@ -296,6 +305,7 @@ class Liquid:
                 cache=cache_store,
                 adapter_id=config.config_id,
                 cache_ttl_override=cache_ttl_override,
+                rate_limiter=self.rate_limiter,
             )
             result = await fetcher.fetch(
                 endpoint=target_ep,
@@ -305,6 +315,23 @@ class Liquid:
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
             return [r.mapped_data for r in mapped]
+
+    async def remaining_quota(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+    ) -> QuotaInfo:
+        """Return current rate-limit quota observed for an adapter / endpoint.
+
+        Returns an empty QuotaInfo if no RateLimiter is configured or no
+        observations have been recorded yet for this key.
+        """
+        from liquid.sync.quota import QuotaInfo
+
+        if self.rate_limiter is None:
+            return QuotaInfo()
+        key = f"{config.config_id}:{endpoint}" if endpoint else config.config_id
+        return await self.rate_limiter.quota(key)
 
     async def invalidate_cache(
         self,
@@ -426,6 +453,8 @@ class Liquid:
                 http_client=client,
                 vault=self.vault,
                 retry_policy=self._retry_policy or WRITE_RETRY_DEFAULTS,
+                rate_limiter=self.rate_limiter,
+                adapter_id=config.config_id,
             )
             result = await executor.execute(
                 action=action,
@@ -505,6 +534,8 @@ class Liquid:
                 http_client=client,
                 vault=self.vault,
                 retry_policy=self._retry_policy or WRITE_RETRY_DEFAULTS,
+                rate_limiter=self.rate_limiter,
+                adapter_id=config.config_id,
             )
             batch_executor = BatchExecutor(
                 executor=executor,

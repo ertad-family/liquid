@@ -52,6 +52,14 @@ class ActionFailed(Event):
     consecutive_failures: int = 1
 
 
+class RateLimitApproaching(Event):
+    """Emitted when an adapter's rate-limit quota is near exhaustion."""
+
+    remaining: int
+    limit: int
+    reset_in_seconds: float
+
+
 @runtime_checkable
 class EventHandler(Protocol):
     async def handle(self, event: Event) -> None: ...

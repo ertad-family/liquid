@@ -68,8 +68,10 @@ class BatchExecutor:
         aborted = False
         abort_event = asyncio.Event() if on_error == BatchErrorPolicy.ABORT else None
 
-        # Calculate minimum delay between requests based on rate limits
-        min_delay = self._calculate_delay()
+        # Calculate minimum delay between requests based on rate limits.
+        # If the executor has a RateLimiter, delegate throttling to it to avoid
+        # double-delay (RateLimiter uses real HTTP header state).
+        min_delay = 0.0 if self.executor.rate_limiter else self._calculate_delay()
         last_request_time = 0.0
 
         # Lock for serializing the rate-limit delay check

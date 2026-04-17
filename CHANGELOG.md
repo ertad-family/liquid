@@ -22,6 +22,18 @@ All notable changes to Liquid will be documented in this file.
 - Automatic `Cache-Control` header parsing (max-age, no-store, no-cache)
 - `Fetcher` accepts `cache`, `adapter_id`, `cache_ttl_override` parameters
 
+### Added (rate limits)
+- `RateLimiter` with token-bucket state per (adapter, endpoint)
+- Parses X-RateLimit-* (GitHub/Stripe) and RateLimit-* (IETF draft)
+- Parses Retry-After as fallback
+- Reset detection: epoch seconds / delta / ISO 8601
+- `Fetcher(rate_limiter=...)` and `ActionExecutor(rate_limiter=...)`
+- `Liquid(rate_limiter=...)` constructor param
+- `Liquid.remaining_quota(adapter)` public method
+- `QuotaInfo` model with `is_near_limit`, `time_until_reset()`
+- `RateLimitApproaching` event
+- BatchExecutor delegates to RateLimiter when present (no double-delay)
+
 ### Changed
 - Version bumped to 0.6.0
 

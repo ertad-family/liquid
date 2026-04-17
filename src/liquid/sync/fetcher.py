@@ -18,6 +18,7 @@ from liquid.sync.selector import RecordSelector
 
 if TYPE_CHECKING:
     from liquid.protocols import CacheStore, Vault
+    from liquid.sync.rate_limiter import RateLimiter
 
 
 class FetchResult:
@@ -45,6 +46,8 @@ class Fetcher:
         cache: CacheStore | None = None,
         adapter_id: str | None = None,
         cache_ttl_override: dict[str, int] | None = None,
+        rate_limiter: RateLimiter | None = None,
+        respect_rate_limit: bool = True,
     ) -> None:
         self.http_client = http_client
         self.vault = vault
@@ -54,6 +57,8 @@ class Fetcher:
         self.cache = cache
         self.adapter_id = adapter_id
         self.cache_ttl_override = cache_ttl_override or {}
+        self.rate_limiter = rate_limiter
+        self.respect_rate_limit = respect_rate_limit
 
     async def fetch(
         self,
@@ -88,12 +93,20 @@ class Fetcher:
         headers = {**self.extra_headers, "Authorization": f"Bearer {auth_value}"}
 
         url = f"{base_url.rstrip('/')}{endpoint.path}"
+
+        rate_key = f"{self.adapter_id or 'anon'}:{endpoint.path}"
+        if self.rate_limiter is not None and self.respect_rate_limit:
+            await self.rate_limiter.acquire(rate_key)
+
         response = await self.http_client.request(
             method=endpoint.method,
             url=url,
             params=params,
             headers=headers,
         )
+
+        if self.rate_limiter is not None:
+            await self.rate_limiter.observe_response(rate_key, response)
 
         _check_response(response)
 
