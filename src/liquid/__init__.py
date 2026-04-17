@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
@@ -38,6 +38,7 @@ from liquid.models import (
     SyncResult,
 )
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
+from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
@@ -83,4 +84,6 @@ __all__ = [
     "Vault",
     "VaultError",
     "adapter_to_tools",
+    "infer_limits",
+    "lookup_known_limits",
 ]

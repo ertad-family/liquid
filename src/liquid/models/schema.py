@@ -42,6 +42,8 @@ class OAuthConfig(BaseModel):
 class RateLimits(BaseModel):
     requests_per_second: float | None = None
     requests_per_minute: float | None = None
+    requests_per_hour: float | None = None
+    requests_per_day: float | None = None
     burst: int | None = None
     retry_after_header: str | None = None
 

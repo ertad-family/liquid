@@ -2,6 +2,22 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.7.0] - 2026-04-17
+
+### Added (proactive rate limit knowledge)
+- `liquid.sync.known_limits` module with `STATIC_KNOWN_LIMITS` (50+ top APIs: Stripe, GitHub, Shopify, Slack, HubSpot, Notion, OpenAI, ...)
+- `CATEGORY_DEFAULTS` conservative per-category fallbacks (payments, ecommerce, messaging, ...)
+- `infer_limits(url, category)` helper — hostname match then category default
+- `lookup_known_limits(url)` and `lookup_category_defaults(category)` helpers
+- `RateLimiter.seed(key, limits)` — bootstrap bucket before first response
+- `RateLimits.requests_per_hour`, `RateLimits.requests_per_day` fields
+- `Liquid._ensure_rate_limit_seeded()` — auto-seeds limiter on `fetch()`, `sync()`, `execute()`, `execute_batch()`
+- Public exports: `liquid.infer_limits`, `liquid.lookup_known_limits`
+
+### Changed
+- Version bumped to 0.7.0
+- Observed response headers still take precedence — `seed()` does not overwrite live state
+
 ## [0.6.0] - 2026-04-17
 
 ### Added

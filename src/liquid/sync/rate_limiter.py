@@ -13,6 +13,8 @@ from liquid.sync.quota import QuotaInfo
 if TYPE_CHECKING:
     import httpx
 
+    from liquid.models.schema import RateLimits
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +48,25 @@ class RateLimiter:
         wait_seconds = min(wait_seconds, self.max_wait_seconds)
         logger.info("Rate limit throttling key=%s waiting=%.1fs", key, wait_seconds)
         await asyncio.sleep(wait_seconds)
+
+    async def seed(self, key: str, limits: RateLimits) -> None:
+        """Seed bucket with known/default limits BEFORE first response.
+
+        Used for proactive throttling when no response data exists yet.
+        Observed response headers will overwrite this state.
+        """
+        bucket_limit, window_seconds = _rate_limits_to_bucket(limits)
+        if bucket_limit is None:
+            return
+
+        reset_at = datetime.now(UTC) + timedelta(seconds=window_seconds)
+        async with self._lock:
+            bucket = self._buckets.setdefault(key, _BucketState())
+            # Only seed if bucket is empty (don't overwrite observed data)
+            if bucket.limit is None:
+                bucket.limit = bucket_limit
+                bucket.remaining = bucket_limit
+                bucket.reset_at = reset_at
 
     async def observe_response(self, key: str, response: httpx.Response) -> None:
         parsed = _parse_rate_limit_headers(response.headers)
@@ -140,3 +161,17 @@ def _safe_int(value: str) -> int | None:
         return int(float(value.strip()))
     except (ValueError, AttributeError):
         return None
+
+
+def _rate_limits_to_bucket(limits: RateLimits) -> tuple[int | None, int]:
+    """Convert RateLimits to (bucket_capacity, window_seconds)."""
+    # Pick the tightest declared window
+    if limits.requests_per_second is not None:
+        return (int(limits.requests_per_second), 1)
+    if limits.requests_per_minute is not None:
+        return (int(limits.requests_per_minute), 60)
+    if limits.requests_per_hour is not None:
+        return (int(limits.requests_per_hour), 3600)
+    if limits.requests_per_day is not None:
+        return (int(limits.requests_per_day), 86400)
+    return (None, 0)

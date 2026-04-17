@@ -8,13 +8,14 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from liquid.models.schema import Endpoint
+from liquid.models.schema import Endpoint, RateLimits
 from liquid.sync.fetcher import Fetcher
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import (
     RateLimiter,
     _parse_rate_limit_headers,
     _parse_reset_header,
+    _rate_limits_to_bucket,
     _safe_int,
 )
 
@@ -231,6 +232,63 @@ class TestQuotaInfo:
 
     def test_time_until_reset_no_data(self):
         assert QuotaInfo().time_until_reset() == 0.0
+
+
+class TestSeed:
+    async def test_seed_creates_bucket(self):
+        limiter = RateLimiter()
+        await limiter.seed("key1", RateLimits(requests_per_second=100))
+        quota = await limiter.quota("key1")
+        assert quota.remaining == 100
+        assert quota.limit == 100
+
+    async def test_seed_doesnt_overwrite_observed(self):
+        limiter = RateLimiter()
+        resp = _make_response(
+            {
+                "X-RateLimit-Remaining": "50",
+                "X-RateLimit-Limit": "200",
+                "X-RateLimit-Reset": "60",
+            }
+        )
+        await limiter.observe_response("key1", resp)
+        # Now seed — should NOT overwrite observed state
+        await limiter.seed("key1", RateLimits(requests_per_second=10))
+        quota = await limiter.quota("key1")
+        assert quota.remaining == 50
+        assert quota.limit == 200
+
+    async def test_seed_with_per_minute(self):
+        limiter = RateLimiter()
+        await limiter.seed("key1", RateLimits(requests_per_minute=600))
+        quota = await limiter.quota("key1")
+        assert quota.limit == 600
+        assert quota.remaining == 600
+
+    async def test_seed_with_per_hour(self):
+        limiter = RateLimiter()
+        await limiter.seed("key1", RateLimits(requests_per_hour=5000))
+        quota = await limiter.quota("key1")
+        assert quota.limit == 5000
+
+    async def test_seed_with_per_day(self):
+        limiter = RateLimiter()
+        await limiter.seed("key1", RateLimits(requests_per_day=100000))
+        quota = await limiter.quota("key1")
+        assert quota.limit == 100000
+
+    async def test_seed_with_empty_limits_noop(self):
+        limiter = RateLimiter()
+        await limiter.seed("key1", RateLimits())
+        quota = await limiter.quota("key1")
+        assert quota.remaining is None
+        assert quota.limit is None
+
+    async def test_seed_preferred_tightest_window(self):
+        # Per-second wins over per-minute when both are present
+        cap, window = _rate_limits_to_bucket(RateLimits(requests_per_second=10, requests_per_minute=1000))
+        assert cap == 10
+        assert window == 1
 
 
 class TestFetcherIntegration:

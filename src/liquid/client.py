@@ -138,8 +138,36 @@ class Liquid:
             verified_at=datetime.now(UTC) if verified_by else None,
         )
 
+    async def _ensure_rate_limit_seeded(
+        self,
+        config: AdapterConfig,
+        endpoint_path: str | None = None,
+    ) -> None:
+        """Seed rate limiter with known limits on first use.
+
+        Priority:
+        1. schema.rate_limits (declared by discovery)
+        2. STATIC_KNOWN_LIMITS (hostname match)
+        3. CATEGORY_DEFAULTS (fallback)
+
+        Observed response headers still take precedence (seed doesn't overwrite).
+        """
+        if self.rate_limiter is None:
+            return
+
+        from liquid.sync.known_limits import infer_limits
+
+        limits = config.schema_.rate_limits
+        if limits is None:
+            limits = infer_limits(config.schema_.source_url, category=None)
+
+        key = f"{config.config_id}:{endpoint_path}" if endpoint_path else config.config_id
+        await self.rate_limiter.seed(key, limits)
+
     async def sync(self, config: AdapterConfig, cursor: str | None = None) -> SyncResult:
         """Phase 4: Run a deterministic sync cycle."""
+        for ep in config.sync.endpoints:
+            await self._ensure_rate_limit_seeded(config, ep)
         client = self._http_client or httpx.AsyncClient()
         try:
             fetcher = Fetcher(
@@ -286,6 +314,8 @@ class Liquid:
         if target_ep is None:
             msg = f"Endpoint {ep_path} not found in adapter schema"
             raise ValueError(msg)
+
+        await self._ensure_rate_limit_seeded(config, ep_path)
 
         # Build per-endpoint TTL override map for this call.
         cache_ttl_override: dict[str, int] = dict(config.sync.cache_ttl)
@@ -444,6 +474,8 @@ class Liquid:
                 f"Action {action_id} has not been verified. Call create_adapter() with verified actions to approve."
             )
 
+        await self._ensure_rate_limit_seeded(config, action.endpoint_path)
+
         from liquid.action.executor import ActionExecutor
         from liquid.discovery.utils import managed_http_client
         from liquid.sync.retry import WRITE_RETRY_DEFAULTS
@@ -521,6 +553,8 @@ class Liquid:
             raise ActionNotVerifiedError(
                 f"Action {action_id} has not been verified. Call create_adapter() with verified actions to approve."
             )
+
+        await self._ensure_rate_limit_seeded(config, action.endpoint_path)
 
         from liquid.action.batch import BatchErrorPolicy, BatchExecutor
         from liquid.action.executor import ActionExecutor
