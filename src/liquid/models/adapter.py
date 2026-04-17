@@ -37,15 +37,17 @@ class AdapterConfig(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    def to_tools(self, format: str = "anthropic") -> list[dict]:
+    def to_tools(self, format: str = "anthropic", style: str = "raw") -> list[dict]:
         """Generate tool definitions for AI agents.
 
         Args:
             format: "anthropic", "openai", "langchain", or "mcp"
+            style: "raw" (minimal descriptions, back-compat) or "agent-friendly"
+                (enriched descriptions + metadata block with cost/side-effects/etc).
 
         Returns:
             List of tool definitions compatible with the target LLM provider.
         """
         from liquid.tools import adapter_to_tools  # Lazy import to avoid circular
 
-        return adapter_to_tools(self, format)  # type: ignore[arg-type]
+        return adapter_to_tools(self, format, style)  # type: ignore[arg-type]

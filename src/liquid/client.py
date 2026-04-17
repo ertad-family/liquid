@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from liquid.action.batch import BatchResult
     from liquid.action.reviewer import ActionReview
     from liquid.events import EventHandler
+    from liquid.models.response import FetchResponse
     from liquid.models.schema import Endpoint
     from liquid.models.sync import SyncResult
     from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
@@ -358,6 +359,70 @@ class Liquid:
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
             return [r.mapped_data for r in mapped]
+
+    async def fetch_with_meta(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        limit: int | None = None,
+        head: int | None = None,
+        tail: int | None = None,
+        fields: list[str] | None = None,
+        summary: bool = False,
+        max_tokens: int | None = None,
+        cache: int | str | bool | None = None,
+    ) -> FetchResponse:
+        """Fetch with agent-friendly metadata and context-window controls.
+
+        Parameters mirror ``fetch()`` plus:
+        - ``limit`` / ``head``: keep only the first N records (``head`` wins if both given)
+        - ``tail``: keep only the last N records
+        - ``fields``: drop everything except the named top-level fields
+        - ``summary``: return aggregate stats instead of records (no items)
+        - ``max_tokens``: truncate the record list to fit a rough token budget
+
+        Returns a ``FetchResponse`` with ``items`` + ``meta`` (total, returned,
+        truncated flag, estimated tokens, source) and optional ``summary``.
+        """
+        from liquid.models.response import FetchMeta, FetchResponse
+        from liquid.runtime.windowing import (
+            apply_limit,
+            apply_token_budget,
+            build_summary,
+            estimate_tokens,
+            select_fields,
+        )
+
+        records = await self.fetch(config, endpoint, cache=cache)
+        total = len(records)
+
+        if summary:
+            return FetchResponse(
+                items=[],
+                summary=build_summary(records),
+                meta=FetchMeta(total_items=total, returned_items=0, truncated=False),
+            )
+
+        records = select_fields(records, fields)
+        records, truncated_by_limit = apply_limit(records, limit=limit, head=head, tail=tail)
+
+        truncated_by_tokens = False
+        if max_tokens is not None:
+            records, truncated_by_tokens = apply_token_budget(records, max_tokens)
+
+        truncated = truncated_by_limit or truncated_by_tokens
+
+        return FetchResponse(
+            items=records,
+            meta=FetchMeta(
+                total_items=total,
+                returned_items=len(records),
+                truncated=truncated,
+                source="api",
+                estimated_tokens=estimate_tokens(records),
+            ),
+        )
 
     async def remaining_quota(
         self,

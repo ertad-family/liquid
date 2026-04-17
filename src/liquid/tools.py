@@ -14,13 +14,24 @@ if TYPE_CHECKING:
     from liquid.models.schema import Endpoint
 
 ToolFormat = Literal["anthropic", "openai", "langchain", "mcp"]
+ToolStyle = Literal["raw", "agent-friendly"]
 
 
-def adapter_to_tools(config: AdapterConfig, format: ToolFormat = "anthropic") -> list[dict[str, Any]]:
+def adapter_to_tools(
+    config: AdapterConfig,
+    format: ToolFormat = "anthropic",
+    style: ToolStyle = "raw",
+) -> list[dict[str, Any]]:
     """Convert an AdapterConfig into a list of tool definitions for the given format.
 
     Read endpoints become fetch tools (list_X, get_X).
     Verified actions become execute tools (create_X, update_X, delete_X).
+
+    Args:
+        config: The adapter configuration.
+        format: Target LLM provider format.
+        style: "raw" for minimal descriptions; "agent-friendly" for
+            enriched descriptions with metadata (cost, side-effects, related tools).
     """
     tools: list[dict[str, Any]] = []
 
@@ -29,11 +40,17 @@ def adapter_to_tools(config: AdapterConfig, format: ToolFormat = "anthropic") ->
         if ep.kind.value != "read":
             continue
         name = _derive_tool_name(ep.method, ep.path)
-        tool = {
+        if style == "agent-friendly":
+            description = _build_agent_description(ep, config)
+        else:
+            description = ep.description or f"{ep.method} {ep.path}"
+        tool: dict[str, Any] = {
             "name": name,
-            "description": ep.description or f"{ep.method} {ep.path}",
+            "description": description,
             "parameters": _endpoint_to_schema(ep),
         }
+        if style == "agent-friendly":
+            tool["metadata"] = _build_metadata(ep, config)
         tools.append(tool)
 
     # Actions -> execute tools
@@ -52,11 +69,17 @@ def adapter_to_tools(config: AdapterConfig, format: ToolFormat = "anthropic") ->
         if not endpoint:
             continue
         name = _derive_tool_name(action.endpoint_method, action.endpoint_path)
+        if style == "agent-friendly":
+            description = _build_agent_description(endpoint, config)
+        else:
+            description = endpoint.description or f"{endpoint.method} {endpoint.path}"
         tool = {
             "name": name,
-            "description": endpoint.description or f"{endpoint.method} {endpoint.path}",
+            "description": description,
             "parameters": _endpoint_to_schema(endpoint),
         }
+        if style == "agent-friendly":
+            tool["metadata"] = _build_metadata(endpoint, config)
         tools.append(tool)
 
     # Handle name collisions
@@ -149,19 +172,156 @@ def _format_tool(tool: dict[str, Any], format: ToolFormat) -> dict[str, Any]:
     name = tool["name"]
     description = tool["description"]
     params = tool["parameters"]
+    metadata = tool.get("metadata")
 
     if format == "anthropic":
-        return {"name": name, "description": description, "input_schema": params}
+        result: dict[str, Any] = {"name": name, "description": description, "input_schema": params}
+        if metadata is not None:
+            result["metadata"] = metadata
+        return result
     if format == "openai":
-        return {
+        result = {
             "type": "function",
             "function": {"name": name, "description": description, "parameters": params},
         }
+        if metadata is not None:
+            # OpenAI ignores unknown keys in function definitions
+            result["function"]["x-metadata"] = metadata
+        return result
     if format == "mcp":
-        return {"name": name, "description": description, "inputSchema": params}
+        result = {"name": name, "description": description, "inputSchema": params}
+        if metadata is not None:
+            # MCP spec uses "annotations" for arbitrary metadata
+            result["annotations"] = metadata
+        return result
     if format == "langchain":
-        return {"name": name, "description": description, "args_schema": params}
+        result = {"name": name, "description": description, "args_schema": params}
+        if metadata is not None:
+            result["metadata"] = metadata
+        return result
     raise ValueError(f"Unknown format: {format}")
+
+
+# ---------------------------------------------------------------------------
+# Agent-friendly description helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_agent_description(endpoint: Endpoint, adapter: AdapterConfig) -> str:
+    """Build agent-friendly description: Use this to X. Best when Y. Returns Z. Related."""
+    lines: list[str] = []
+
+    # What
+    base = endpoint.description or f"{endpoint.method} {endpoint.path}"
+    what = base.rstrip(".").strip()
+    # Lowercase first letter if it looks like a sentence; leave acronyms alone.
+    if what and what[0].isupper() and (len(what) == 1 or not what[1].isupper()):
+        what = what[0].lower() + what[1:]
+    lines.append(f"Use this to {what}.")
+
+    # When / When not
+    kind = endpoint.kind.value
+    raw_segments = [s for s in endpoint.path.strip("/").split("/") if s]
+    last_is_id = bool(raw_segments) and raw_segments[-1].startswith("{")
+
+    if kind == "read" and not last_is_id:
+        # Listing endpoint — point at the by-id sibling if we can find one.
+        sibling_name = _derive_tool_name("GET", endpoint.path.rstrip("/") + "/{id}")
+        lines.append(f"Best for listing/searching. For a specific item, use `{sibling_name}` if available.")
+    elif kind == "read" and last_is_id and endpoint.method.upper() == "GET":
+        lines.append("Best for fetching a single item by ID.")
+    elif kind == "write":
+        lines.append("Mutates remote state; prefer after confirming the write is necessary.")
+    elif kind == "delete":
+        lines.append("Destructive and usually irreversible; confirm before calling.")
+
+    # Returns shape (first few response fields)
+    if endpoint.response_schema:
+        fields = _extract_top_fields(endpoint.response_schema, limit=5)
+        if fields:
+            lines.append(f"Returns: {{{', '.join(fields)}}}.")
+
+    # Cost hint — keeps agents honest about batching
+    metadata = _build_metadata(endpoint, adapter)
+    lines.append(f"Cost: {metadata['cost_credits']} credit(s); side-effects: {metadata['side_effects']}.")
+
+    # Related tools (siblings under same path prefix)
+    related = _find_related_tools(endpoint, adapter)
+    if related:
+        lines.append(f"Related: {', '.join(related[:3])}.")
+
+    return " ".join(lines)
+
+
+def _extract_top_fields(schema: dict[str, Any], limit: int = 5) -> list[str]:
+    """Extract top-level field names from response schema (handles array-of-object)."""
+    if not isinstance(schema, dict):
+        return []
+    # Handle array-of-object
+    if schema.get("type") == "array":
+        items = schema.get("items", {})
+        if isinstance(items, dict):
+            props = items.get("properties", {})
+            if isinstance(props, dict):
+                return list(props.keys())[:limit]
+    # Handle object
+    props = schema.get("properties", {})
+    if isinstance(props, dict):
+        return list(props.keys())[:limit]
+    return []
+
+
+def _find_related_tools(endpoint: Endpoint, adapter: AdapterConfig) -> list[str]:
+    """Find tools for sibling endpoints under the same top-level path prefix."""
+    segments = [s for s in endpoint.path.strip("/").split("/") if s]
+    if not segments:
+        return []
+    path_root = "/" + segments[0]
+    related: list[str] = []
+    for ep in adapter.schema_.endpoints:
+        if ep is endpoint:
+            continue
+        if ep.path == endpoint.path and ep.method == endpoint.method:
+            continue
+        if ep.path.startswith(path_root):
+            related.append(_derive_tool_name(ep.method, ep.path))
+    # De-duplicate while preserving order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for name in related:
+        if name in seen:
+            continue
+        seen.add(name)
+        unique.append(name)
+    return unique[:5]
+
+
+def _build_metadata(endpoint: Endpoint, adapter: AdapterConfig) -> dict[str, Any]:
+    """Build metadata block agents can reason about before calling."""
+    kind = endpoint.kind.value
+    method = endpoint.method.upper()
+    is_write = kind in ("write", "delete")
+
+    if kind == "delete":
+        side_effects = "destructive"
+    elif is_write:
+        side_effects = "mutates"
+    else:
+        side_effects = "read-only"
+
+    idempotent = method in ("GET", "HEAD", "PUT", "DELETE")
+
+    return {
+        "cost_credits": 2 if is_write else 1,
+        "typical_latency_ms": 500 if is_write else 200,
+        "idempotent": idempotent,
+        "side_effects": side_effects,
+        "rate_limit_impact": "1 unit",
+        "cached": kind == "read",
+        "service": adapter.schema_.service_name,
+        "method": method,
+        "path": endpoint.path,
+    }
 
 
 def build_args_model(endpoint: Endpoint):

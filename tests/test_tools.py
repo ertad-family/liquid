@@ -144,6 +144,81 @@ class TestAdapterToTools:
         assert len(tools) >= 1
 
 
+class TestAgentFriendlyStyle:
+    def test_description_has_use_this_to(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="agent-friendly")
+        assert any("Use this to" in t["description"] for t in tools)
+
+    def test_metadata_included(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="agent-friendly")
+        assert all("metadata" in t for t in tools)
+        t = tools[0]
+        assert "cost_credits" in t["metadata"]
+        assert "side_effects" in t["metadata"]
+        assert "idempotent" in t["metadata"]
+        assert "typical_latency_ms" in t["metadata"]
+        assert "cached" in t["metadata"]
+
+    def test_write_tool_has_mutates_side_effect(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="agent-friendly")
+        create = next(t for t in tools if t["name"].startswith("create_"))
+        assert create["metadata"]["side_effects"] in ("mutates", "destructive")
+        assert create["metadata"]["cost_credits"] == 2
+
+    def test_read_tool_read_only(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="agent-friendly")
+        list_tool = next(t for t in tools if t["name"] == "list_orders")
+        assert list_tool["metadata"]["side_effects"] == "read-only"
+        assert list_tool["metadata"]["cached"] is True
+        assert list_tool["metadata"]["cost_credits"] == 1
+
+    def test_raw_style_unchanged(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="raw")
+        assert all("metadata" not in t for t in tools)
+
+    def test_default_style_is_raw(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic")
+        assert all("metadata" not in t for t in tools)
+
+    def test_openai_metadata_on_function(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "openai", style="agent-friendly")
+        for t in tools:
+            assert "x-metadata" in t["function"]
+
+    def test_mcp_annotations(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "mcp", style="agent-friendly")
+        for t in tools:
+            assert "annotations" in t
+            assert "cost_credits" in t["annotations"]
+
+    def test_langchain_metadata(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "langchain", style="agent-friendly")
+        for t in tools:
+            assert "metadata" in t
+
+    def test_related_tools_mentioned_when_available(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="agent-friendly")
+        # list_orders has a sibling create_orders under /orders
+        list_tool = next(t for t in tools if t["name"] == "list_orders")
+        assert "Related" in list_tool["description"]
+        assert "create_orders" in list_tool["description"]
+
+    def test_adapter_config_to_tools_accepts_style(self):
+        config = _make_config()
+        tools = config.to_tools("anthropic", style="agent-friendly")
+        assert any("Use this to" in t["description"] for t in tools)
+
+
 class TestBuildArgsModel:
     def test_creates_pydantic_model(self):
         from liquid.tools import build_args_model

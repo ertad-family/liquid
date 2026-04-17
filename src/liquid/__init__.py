@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
@@ -37,6 +37,7 @@ from liquid.models import (
     SyncConfig,
     SyncResult,
 )
+from liquid.models.response import FetchMeta, FetchResponse
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
 from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
@@ -65,6 +66,8 @@ __all__ = [
     "Endpoint",
     "EndpointGoneError",
     "EndpointKind",
+    "FetchMeta",
+    "FetchResponse",
     "FieldMapping",
     "FieldNotFoundError",
     "InMemoryCache",

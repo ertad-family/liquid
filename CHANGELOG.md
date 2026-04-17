@@ -2,6 +2,33 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.9.0] - 2026-04-17
+
+### Added (agent-friendly tool descriptions)
+- `AdapterConfig.to_tools(style="agent-friendly")` and `adapter_to_tools(..., style=...)`
+- Description template: "Use this to X. Best when Y. Returns Z. Cost. Related."
+- Per-tool `metadata` block: `cost_credits`, `typical_latency_ms`, `idempotent`,
+  `side_effects` (read-only/mutates/destructive), `rate_limit_impact`, `cached`,
+  `service`, `method`, `path`
+- Metadata surfaced in all four formats: `anthropic` (`metadata`), `openai`
+  (`function.x-metadata`), `mcp` (`annotations`), `langchain` (`metadata`)
+- `style="raw"` (default) keeps the existing minimal output for back-compat
+
+### Added (context-window awareness)
+- `Liquid.fetch_with_meta(config, endpoint, *, limit/head/tail/fields/summary/max_tokens, cache)`
+- New `FetchResponse` model with `items`, `meta`, optional `summary`
+- New `FetchMeta` model: `total_items`, `returned_items`, `truncated`, `source`,
+  `cache_age_seconds`, `estimated_tokens`, `next_cursor`
+- `liquid.runtime.windowing` helpers: `estimate_tokens`, `select_fields`,
+  `apply_limit`, `apply_token_budget`, `build_summary`
+- Summary mode returns aggregate stats (count, numeric sum/avg/min/max,
+  categorical distributions) with no records
+- Public exports: `liquid.FetchMeta`, `liquid.FetchResponse`
+
+### Changed
+- Version bumped to 0.9.0
+- `Liquid.fetch()` unchanged — continues to return `list[dict]`
+
 ## [0.8.0] - 2026-04-17
 
 ### Added (opt-in crowdsourced telemetry)
