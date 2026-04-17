@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
@@ -18,6 +18,8 @@ from liquid.exceptions import (
     SyncRuntimeError,
     VaultError,
 )
+from liquid.intent import CANONICAL_INTENTS, Intent, IntentConfig, get_intent
+from liquid.intent import list_intents as list_canonical_intents
 from liquid.models import (
     ActionConfig,
     ActionError,
@@ -46,6 +48,7 @@ from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
 
 __all__ = [
+    "CANONICAL_INTENTS",
     "APISchema",
     "ActionConfig",
     "ActionError",
@@ -72,6 +75,8 @@ __all__ = [
     "FieldMapping",
     "FieldNotFoundError",
     "InMemoryCache",
+    "Intent",
+    "IntentConfig",
     "KnowledgeStore",
     "LLMBackend",
     "Liquid",
@@ -90,7 +95,9 @@ __all__ = [
     "VaultError",
     "adapter_to_tools",
     "apply_query",
+    "get_intent",
     "infer_limits",
+    "list_canonical_intents",
     "lookup_known_limits",
     "validate_query",
 ]

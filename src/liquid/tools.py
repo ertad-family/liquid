@@ -10,6 +10,7 @@ import re
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    from liquid.intent.models import Intent
     from liquid.models.adapter import AdapterConfig
     from liquid.models.schema import Endpoint
 
@@ -92,6 +93,27 @@ def adapter_to_tools(
         if style == "agent-friendly":
             tool["metadata"] = _build_metadata(endpoint, config)
         tools.append(tool)
+
+    # Intents -> canonical tools (agent-friendly style only)
+    if style == "agent-friendly":
+        from liquid.intent.registry import get_intent
+
+        for intent_config in config.intents:
+            if intent_config.verified_by is None:
+                continue
+            canonical = get_intent(intent_config.intent_name)
+            if canonical is None:
+                continue
+            tools.append(
+                {
+                    "name": canonical.name,
+                    "description": (
+                        f"{canonical.description}. [Canonical intent — works across APIs in this category.]"
+                    ),
+                    "parameters": canonical.canonical_schema,
+                    "metadata": _build_intent_metadata(canonical, config),
+                }
+            )
 
     # Handle name collisions
     tools = _resolve_collisions(tools)
@@ -332,6 +354,26 @@ def _build_metadata(endpoint: Endpoint, adapter: AdapterConfig) -> dict[str, Any
         "service": adapter.schema_.service_name,
         "method": method,
         "path": endpoint.path,
+    }
+
+
+def _build_intent_metadata(intent: Intent, adapter: AdapterConfig) -> dict[str, Any]:
+    """Metadata block for canonical intent tools."""
+    # Read intents are generally list_* / fetch_* categories; writes are everything else.
+    read_categories = {"analytics"}
+    is_read = intent.name.startswith(("list_", "fetch_", "get_")) or intent.category in read_categories
+
+    return {
+        "cost_credits": 1 if is_read else 2,
+        "typical_latency_ms": 200 if is_read else 500,
+        "idempotent": is_read,
+        "side_effects": "read-only" if is_read else "mutates",
+        "rate_limit_impact": "1 unit",
+        "cached": is_read,
+        "service": adapter.schema_.service_name,
+        "intent": intent.name,
+        "category": intent.category,
+        "canonical": True,
     }
 
 

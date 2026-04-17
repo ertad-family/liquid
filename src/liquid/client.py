@@ -699,6 +699,55 @@ class Liquid:
         await self._emit_action_event(config.config_id, result)
         return result
 
+    async def execute_intent(
+        self,
+        config: AdapterConfig,
+        intent_name: str,
+        data: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> ActionResult | list[dict[str, Any]]:
+        """Execute an intent using its canonical schema.
+
+        Looks up the adapter's binding for this intent, translates the canonical
+        input into adapter-specific fields, then executes via :meth:`execute`
+        (writes) or :meth:`fetch` (reads).
+        """
+        from liquid.intent.executor import compile_to_action_data, resolve_intent
+        from liquid.intent.registry import get_intent
+
+        # Validate intent exists canonically
+        canonical = get_intent(intent_name)
+        if canonical is None:
+            msg = f"Unknown canonical intent: {intent_name}"
+            raise ValueError(msg)
+
+        # Find adapter's binding
+        intent_config = resolve_intent(config, intent_name)
+        if intent_config is None:
+            msg = f"Adapter does not implement intent: {intent_name}"
+            raise ValueError(msg)
+
+        # Write intent (has action_id)
+        if intent_config.action_id:
+            action_data = compile_to_action_data(intent_config, data)
+            return await self.execute(
+                config,
+                intent_config.action_id,
+                action_data,
+                idempotency_key=idempotency_key,
+            )
+
+        # Read intent (has endpoint_path)
+        if intent_config.endpoint_path:
+            return await self.fetch(config, intent_config.endpoint_path)
+
+        msg = f"Intent config for {intent_name} has neither action_id nor endpoint_path"
+        raise ValueError(msg)
+
+    def list_intents(self, config: AdapterConfig) -> list[str]:
+        """List canonical intent names this adapter implements."""
+        return [ic.intent_name for ic in config.intents]
+
     async def execute_action(
         self,
         config: AdapterConfig,

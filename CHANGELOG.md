@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.11.0] - 2026-04-17
+
+### Added (intent layer — canonical operations across APIs)
+- `liquid.intent` package with `Intent`, `IntentConfig`, and `CANONICAL_INTENTS`
+  registry — the shared vocabulary agents use instead of HTTP mechanics
+- 10 canonical intents bootstrapped: `charge_customer`, `refund_charge`,
+  `create_customer`, `update_customer`, `send_email`, `post_message`,
+  `create_ticket`, `close_ticket`, `list_orders`, `cancel_order`
+- `AdapterConfig.intents: list[IntentConfig]` — adapter binds canonical intents
+  to API-specific actions/endpoints via field_mappings + static_values
+- `Liquid.execute_intent(config, intent_name, data)` — run a canonical intent;
+  translates canonical input to adapter-specific call, dispatches to
+  `execute()` (writes) or `fetch()` (reads)
+- `Liquid.list_intents(config)` — list canonical intents this adapter implements
+- `liquid.intent.executor` with `resolve_intent()`, `compile_to_action_data()`,
+  `find_action_for_intent()` helpers
+- Intent tools surfaced in `adapter_to_tools(style="agent-friendly")` with
+  canonical schema + `canonical: True` metadata flag — one vocabulary across
+  Stripe / Adyen / Square / …
+- Public exports: `liquid.Intent`, `liquid.IntentConfig`,
+  `liquid.CANONICAL_INTENTS`, `liquid.get_intent`, `liquid.list_canonical_intents`
+
+### Changed
+- Version bumped to 0.11.0
+
 ## [0.10.0] - 2026-04-17
 
 ### Added (searchable responses with query DSL)
