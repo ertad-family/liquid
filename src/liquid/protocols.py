@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from liquid.models import DeliveryResult, FieldMapping, LLMResponse, MappedRecord, Message, Tool
@@ -38,3 +38,23 @@ class AdapterRegistry(Protocol):
     async def save(self, config: AdapterConfig, target_model: str) -> None: ...
     async def list_all(self) -> list[AdapterConfig]: ...
     async def delete(self, config_id: str) -> None: ...
+
+
+@runtime_checkable
+class CacheStore(Protocol):
+    """Optional response cache for agent runtime speed.
+
+    Implementations: InMemoryCache (default), RedisCache (cloud).
+    """
+
+    async def get(self, key: str) -> dict[str, Any] | None:
+        """Return cached value or None if missing/expired."""
+        ...
+
+    async def set(self, key: str, value: dict[str, Any], ttl: int) -> None:
+        """Store value with TTL in seconds."""
+        ...
+
+    async def delete(self, key: str) -> None:
+        """Remove entry."""
+        ...

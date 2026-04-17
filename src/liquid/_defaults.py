@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from liquid.cache.memory import InMemoryCache
 from liquid.exceptions import VaultError
 from liquid.models.adapter import AdapterConfig, FieldMapping  # noqa: TC001
 from liquid.models.llm import DeliveryResult, MappedRecord
+
+__all__ = [
+    "CollectorSink",
+    "InMemoryAdapterRegistry",
+    "InMemoryCache",
+    "InMemoryKnowledgeStore",
+    "InMemoryVault",
+    "StdoutSink",
+]
 
 
 class InMemoryVault:

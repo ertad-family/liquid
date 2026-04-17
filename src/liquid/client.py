@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from liquid.events import EventHandler
     from liquid.models.schema import Endpoint
     from liquid.models.sync import SyncResult
-    from liquid.protocols import AdapterRegistry, DataSink, KnowledgeStore, LLMBackend, Vault
+    from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
     from liquid.sync.retry import RetryPolicy
 
 
@@ -56,6 +56,7 @@ class Liquid:
         event_handler: EventHandler | None = None,
         http_client: httpx.AsyncClient | None = None,
         retry_policy: RetryPolicy | None = None,
+        cache: CacheStore | None = None,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -65,6 +66,7 @@ class Liquid:
         self.event_handler = event_handler
         self._http_client = http_client
         self._retry_policy = retry_policy
+        self.cache = cache
 
         self._auth_classifier = AuthClassifier()
         self._auth_manager = AuthManager(vault)
@@ -250,12 +252,24 @@ class Liquid:
 
         return review
 
-    async def fetch(self, config: AdapterConfig, endpoint: str | None = None) -> list[dict[str, Any]]:
+    async def fetch(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        cache: int | str | bool | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch data through an adapter — the primary way agents get data.
 
         If endpoint is None, fetches from the first endpoint in sync config.
         Returns mapped records as plain dicts.
+
+        Cache behavior:
+        - cache=False: bypass cache for this call
+        - cache=int: use as TTL seconds for this call
+        - cache="5m"/"1h"/...: parsed via parse_ttl
+        - cache=None: use SyncConfig.cache_ttl default or Cache-Control header
         """
+        from liquid.cache.ttl import parse_ttl
         from liquid.discovery.utils import managed_http_client
 
         ep_path = endpoint or config.sync.endpoints[0]
@@ -264,8 +278,25 @@ class Liquid:
             msg = f"Endpoint {ep_path} not found in adapter schema"
             raise ValueError(msg)
 
+        # Build per-endpoint TTL override map for this call.
+        cache_ttl_override: dict[str, int] = dict(config.sync.cache_ttl)
+        cache_store: CacheStore | None = self.cache
+        if cache is False:
+            # Bypass cache entirely for this call.
+            cache_store = None
+        elif isinstance(cache, int) and not isinstance(cache, bool):
+            cache_ttl_override[ep_path] = max(0, cache)
+        elif isinstance(cache, str):
+            cache_ttl_override[ep_path] = parse_ttl(cache)
+
         async with managed_http_client(self._http_client) as client:
-            fetcher = Fetcher(http_client=client, vault=self.vault)
+            fetcher = Fetcher(
+                http_client=client,
+                vault=self.vault,
+                cache=cache_store,
+                adapter_id=config.config_id,
+                cache_ttl_override=cache_ttl_override,
+            )
             result = await fetcher.fetch(
                 endpoint=target_ep,
                 base_url=config.schema_.source_url,
@@ -274,6 +305,32 @@ class Liquid:
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
             return [r.mapped_data for r in mapped]
+
+    async def invalidate_cache(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+    ) -> None:
+        """Invalidate cache entries for an adapter.
+
+        If endpoint is provided: delete the specific cache key for that endpoint.
+        If endpoint is None: no-op (InMemoryCache does not support pattern delete;
+        cloud implementations with key scanning may override this behavior).
+        """
+        if self.cache is None or endpoint is None:
+            return
+
+        from liquid.cache.key import compute_cache_key
+
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == endpoint), None)
+        method = target_ep.method if target_ep is not None else "GET"
+        key = compute_cache_key(
+            adapter_id=config.config_id,
+            endpoint_path=endpoint,
+            params={},
+            method=method,
+        )
+        await self.cache.delete(key)
 
     async def repair_adapter(
         self,

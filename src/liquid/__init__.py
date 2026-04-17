@@ -2,6 +2,7 @@
 
 __version__ = "0.6.0"
 
+from liquid.cache import InMemoryCache
 from liquid.client import Liquid
 from liquid.exceptions import (
     ActionNotVerifiedError,
@@ -36,7 +37,7 @@ from liquid.models import (
     SyncConfig,
     SyncResult,
 )
-from liquid.protocols import AdapterRegistry, DataSink, KnowledgeStore, LLMBackend, Vault
+from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
 from liquid.tools import adapter_to_tools
 
 __all__ = [
@@ -54,6 +55,7 @@ __all__ = [
     "AuthSetupError",
     "BatchErrorPolicy",
     "BatchResult",
+    "CacheStore",
     "DataSink",
     "DeliveryResult",
     "DiscoveryError",
@@ -62,6 +64,7 @@ __all__ = [
     "EndpointKind",
     "FieldMapping",
     "FieldNotFoundError",
+    "InMemoryCache",
     "KnowledgeStore",
     "LLMBackend",
     "Liquid",

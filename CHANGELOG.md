@@ -11,6 +11,17 @@ All notable changes to Liquid will be documented in this file.
 - GitHub Actions publish workflow (auto-publish to PyPI on git tag)
 - `liquid.adapter_to_tools` top-level export
 
+### Added (continued)
+- `CacheStore` protocol for response caching
+- `InMemoryCache` default implementation
+- `liquid.cache` package: `InMemoryCache`, `compute_cache_key`, `parse_ttl`, `parse_cache_control`
+- `Liquid(cache=...)` constructor parameter
+- `Liquid.fetch(cache="5m"|300|False)` parameter for per-call TTL
+- `Liquid.invalidate_cache(adapter, endpoint?)` method
+- `SyncConfig.cache_ttl: dict[str, int]` per-endpoint TTL overrides
+- Automatic `Cache-Control` header parsing (max-age, no-store, no-cache)
+- `Fetcher` accepts `cache`, `adapter_id`, `cache_ttl_override` parameters
+
 ### Changed
 - Version bumped to 0.6.0
 

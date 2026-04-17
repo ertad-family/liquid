@@ -21,6 +21,7 @@ class SyncConfig(BaseModel):
     schedule: str | None = None
     cursor_field: str | None = None
     batch_size: int = 100
+    cache_ttl: dict[str, int] = Field(default_factory=dict)  # endpoint path -> TTL seconds
 
 
 class AdapterConfig(BaseModel):

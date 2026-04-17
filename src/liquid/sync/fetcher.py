@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx  # noqa: TC002
 
+from liquid.cache.key import compute_cache_key
+from liquid.cache.ttl import parse_cache_control
 from liquid.exceptions import (
     AuthError,
     EndpointGoneError,
@@ -11,15 +13,22 @@ from liquid.exceptions import (
     ServiceDownError,
 )
 from liquid.models.schema import Endpoint  # noqa: TC001
-from liquid.protocols import Vault  # noqa: TC001
 from liquid.sync.pagination import NoPagination, PaginationStrategy
 from liquid.sync.selector import RecordSelector
+
+if TYPE_CHECKING:
+    from liquid.protocols import CacheStore, Vault
 
 
 class FetchResult:
     __slots__ = ("next_cursor", "raw_response", "records")
 
-    def __init__(self, records: list[dict[str, Any]], next_cursor: str | None, raw_response: httpx.Response) -> None:
+    def __init__(
+        self,
+        records: list[dict[str, Any]],
+        next_cursor: str | None,
+        raw_response: httpx.Response | None,
+    ) -> None:
         self.records = records
         self.next_cursor = next_cursor
         self.raw_response = raw_response
@@ -33,12 +42,18 @@ class Fetcher:
         pagination: PaginationStrategy | None = None,
         selector: RecordSelector | None = None,
         extra_headers: dict[str, str] | None = None,
+        cache: CacheStore | None = None,
+        adapter_id: str | None = None,
+        cache_ttl_override: dict[str, int] | None = None,
     ) -> None:
         self.http_client = http_client
         self.vault = vault
         self.pagination = pagination or NoPagination()
         self.selector = selector or RecordSelector()
         self.extra_headers = extra_headers or {}
+        self.cache = cache
+        self.adapter_id = adapter_id
+        self.cache_ttl_override = cache_ttl_override or {}
 
     async def fetch(
         self,
@@ -47,10 +62,30 @@ class Fetcher:
         auth_ref: str,
         cursor: str | None = None,
     ) -> FetchResult:
+        params = self.pagination.get_request_params(cursor)
+
+        # Determine per-endpoint override TTL (0 means bypass).
+        override_ttl = self.cache_ttl_override.get(endpoint.path)
+        cache_active = self.cache is not None and override_ttl != 0
+
+        cache_key: str | None = None
+        if cache_active and self.cache is not None:
+            cache_key = compute_cache_key(
+                adapter_id=self.adapter_id or "",
+                endpoint_path=endpoint.path,
+                params=params,
+                method=endpoint.method,
+            )
+            cached = await self.cache.get(cache_key)
+            if cached is not None:
+                return FetchResult(
+                    records=cached.get("records", []),
+                    next_cursor=cached.get("next_cursor"),
+                    raw_response=None,
+                )
+
         auth_value = await self.vault.get(auth_ref)
         headers = {**self.extra_headers, "Authorization": f"Bearer {auth_value}"}
-
-        params = self.pagination.get_request_params(cursor)
 
         url = f"{base_url.rstrip('/')}{endpoint.path}"
         response = await self.http_client.request(
@@ -66,7 +101,32 @@ class Fetcher:
         records = self.selector.select(data)
         next_cursor = self.pagination.extract_next_cursor(response)
 
-        return FetchResult(records=records, next_cursor=next_cursor, raw_response=response)
+        result = FetchResult(records=records, next_cursor=next_cursor, raw_response=response)
+
+        if cache_active and cache_key is not None and self.cache is not None:
+            ttl = _resolve_ttl(override_ttl, response)
+            if ttl > 0:
+                await self.cache.set(
+                    cache_key,
+                    {
+                        "records": records,
+                        "next_cursor": next_cursor,
+                        "status_code": response.status_code,
+                    },
+                    ttl,
+                )
+
+        return result
+
+
+def _resolve_ttl(override_ttl: int | None, response: httpx.Response) -> int:
+    """Determine TTL: override > Cache-Control header > default (0)."""
+    if override_ttl is not None and override_ttl > 0:
+        return override_ttl
+    header_ttl = parse_cache_control(response.headers.get("cache-control"))
+    if header_ttl is not None:
+        return header_ttl
+    return 0
 
 
 def _check_response(response: httpx.Response) -> None:
