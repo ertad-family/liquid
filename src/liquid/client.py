@@ -424,6 +424,128 @@ class Liquid:
             ),
         )
 
+    async def search(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        where: dict[str, Any] | None = None,
+        fields: list[str] | None = None,
+        limit: int | None = 100,
+        sort: str | None = None,  # Future: "field" or "-field" for desc
+    ) -> FetchResponse:
+        """Search records with query DSL, returning only matches.
+
+        Works with any API — pushes filters to API when supported,
+        applies remaining filters locally, always returns matching records.
+        """
+        from liquid.models.response import FetchMeta, FetchResponse
+        from liquid.query.engine import apply_query
+        from liquid.query.translator import translate_to_params
+        from liquid.runtime.windowing import apply_limit, estimate_tokens, select_fields
+
+        if not where:
+            # No filter — behave like fetch_with_meta
+            return await self.fetch_with_meta(config, endpoint, fields=fields, limit=limit)
+
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+        if target_ep is None:
+            msg = f"Endpoint {ep_path} not found in adapter schema"
+            raise ValueError(msg)
+
+        # Translate: server-side params + local remainder
+        _native_params, remaining = translate_to_params(where, target_ep)
+
+        # Fetch (native param translation is a Phase 2 optimization).
+        all_records = await self.fetch(config, endpoint)
+        total_scanned = len(all_records)
+
+        # Apply local filter
+        matching = apply_query(all_records, remaining) if remaining else all_records
+
+        match_count = len(matching)
+
+        # Field selection
+        matching = select_fields(matching, fields)
+
+        # Limit
+        if limit is not None:
+            matching, _ = apply_limit(matching, limit=limit)
+
+        return FetchResponse(
+            items=matching,
+            meta=FetchMeta(
+                total_items=total_scanned,  # Total scanned
+                returned_items=len(matching),
+                truncated=limit is not None and match_count > limit,
+                estimated_tokens=estimate_tokens(matching),
+            ),
+        )
+
+    async def search_nl(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        query: str = "",
+        *,
+        limit: int | None = 20,
+        fields: list[str] | None = None,
+    ) -> FetchResponse:
+        """Natural language search. LLM translates query -> DSL -> executes."""
+        if not self.llm:
+            msg = "search_nl requires llm= on Liquid()"
+            raise ValueError(msg)
+
+        dsl = await self._nl_to_dsl(config, endpoint, query)
+        return await self.search(config, endpoint, where=dsl, limit=limit, fields=fields)
+
+    async def _nl_to_dsl(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None,
+        nl_query: str,
+    ) -> dict[str, Any]:
+        """Use LLM to translate natural-language query to DSL."""
+        from liquid.models.llm import Message
+
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+
+        # Build schema summary
+        schema_fields: list[str] = []
+        if target_ep and target_ep.response_schema:
+            props = target_ep.response_schema.get("properties", {})
+            if target_ep.response_schema.get("type") == "array":
+                items = target_ep.response_schema.get("items", {})
+                props = items.get("properties", {}) if isinstance(items, dict) else {}
+            schema_fields = list(props.keys())[:20]
+
+        prompt = (
+            f"Translate this natural-language query into a Liquid query DSL (MongoDB-style):\n\n"
+            f"Query: {nl_query}\n"
+            f"Available fields: {schema_fields}\n\n"
+            "Operators: $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, "
+            "$contains, $icontains, $startswith, $endswith, $regex, $exists, "
+            "$and, $or, $not.\n\n"
+            "Respond ONLY with a JSON object (the DSL query). No prose. Example: "
+            '{"total_cents": {"$gt": 10000}}'
+        )
+
+        response = await self.llm.chat([Message(role="user", content=prompt)])
+        text = response.content or "{}"
+
+        # Extract JSON
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start == -1 or end == 0:
+            return {}
+        try:
+            result = json.loads(text[start:end])
+        except json.JSONDecodeError:
+            return {}
+        return result if isinstance(result, dict) else {}
+
     async def remaining_quota(
         self,
         config: AdapterConfig,

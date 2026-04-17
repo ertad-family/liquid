@@ -2,6 +2,27 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.10.0] - 2026-04-17
+
+### Added (searchable responses with query DSL)
+- `liquid.query` package with MongoDB-style DSL for agent-native search
+- Operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`,
+  `$contains`, `$icontains`, `$startswith`, `$endswith`, `$regex`, `$exists`,
+  `$and`, `$or`, `$not`
+- Implicit `$eq` shortcut: `{"status": "paid"}` equivalent to `{"status": {"$eq": "paid"}}`
+- Dot-notation nested field access: `{"customer.email": {"$contains": "@gmail"}}`
+- `Liquid.search(config, endpoint, where=..., limit=..., fields=..., sort=...)` —
+  returns `FetchResponse` of matching records only
+- `Liquid.search_nl(config, endpoint, query="natural language")` — LLM translates
+  NL -> DSL -> executes against adapter (requires `llm=`)
+- `liquid.query.translator.translate_to_params()` — splits a DSL query into
+  native API query params + local remainder (opportunistic server-side push-down)
+- `search_X` tool auto-surfaced per read endpoint in `agent-friendly` style
+- Public exports: `liquid.apply_query`, `liquid.validate_query`, `liquid.QueryError`
+
+### Changed
+- Version bumped to 0.10.0
+
 ## [0.9.0] - 2026-04-17
 
 ### Added (agent-friendly tool descriptions)

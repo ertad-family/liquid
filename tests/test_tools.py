@@ -218,6 +218,23 @@ class TestAgentFriendlyStyle:
         tools = config.to_tools("anthropic", style="agent-friendly")
         assert any("Use this to" in t["description"] for t in tools)
 
+    def test_search_tool_surfaced_per_read_endpoint(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="agent-friendly")
+        names = [t["name"] for t in tools]
+        # One search tool per read endpoint (/orders is GET)
+        assert "search_orders" in names
+        search = next(t for t in tools if t["name"] == "search_orders")
+        assert "where" in search["input_schema"]["properties"]
+        assert "limit" in search["input_schema"]["properties"]
+        assert "fields" in search["input_schema"]["properties"]
+
+    def test_raw_style_has_no_search_tool(self):
+        config = _make_config()
+        tools = adapter_to_tools(config, "anthropic", style="raw")
+        names = [t["name"] for t in tools]
+        assert "search_orders" not in names
+
 
 class TestBuildArgsModel:
     def test_creates_pydantic_model(self):

@@ -53,6 +53,17 @@ def adapter_to_tools(
             tool["metadata"] = _build_metadata(ep, config)
         tools.append(tool)
 
+        # Additional search tool for agent-friendly style
+        if style == "agent-friendly":
+            search_name = "search_" + _derive_resource_from_path(ep.path)
+            search_tool: dict[str, Any] = {
+                "name": search_name,
+                "description": _build_search_description(ep),
+                "parameters": _search_input_schema(ep),
+                "metadata": _build_metadata(ep, config),
+            }
+            tools.append(search_tool)
+
     # Actions -> execute tools
     for action in config.actions:
         if action.verified_by is None:
@@ -352,3 +363,41 @@ def _json_type_to_python(json_type: str) -> type:
         "object": dict,
     }
     return mapping.get(json_type, str)
+
+
+# ---------------------------------------------------------------------------
+# Search tool helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_search_description(endpoint: Endpoint) -> str:
+    return (
+        f"Search {endpoint.path} records using query DSL. "
+        f"Use instead of fetching all records when you only need matches. "
+        f"Example: where={{'status': 'paid'}}, where={{'total': {{'$gt': 100}}}}."
+    )
+
+
+def _search_input_schema(_endpoint: Endpoint) -> dict[str, Any]:
+    # endpoint is reserved for future schema-aware input validation
+    return {
+        "type": "object",
+        "properties": {
+            "where": {
+                "type": "object",
+                "description": "Query DSL (MongoDB-style). Example: {status: 'paid', total: {$gt: 100}}",
+            },
+            "limit": {"type": "integer", "default": 20},
+            "fields": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Only return these fields (save tokens)",
+            },
+        },
+    }
+
+
+def _derive_resource_from_path(path: str) -> str:
+    segments = [s for s in path.strip("/").split("/") if s and not s.startswith("{")]
+    resource = segments[-1] if segments else "resource"
+    return re.sub(r"[^a-zA-Z0-9_]", "_", resource).lower()
