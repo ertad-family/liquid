@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from liquid.client import Liquid
 from liquid.exceptions import (
@@ -37,6 +37,7 @@ from liquid.models import (
     SyncResult,
 )
 from liquid.protocols import AdapterRegistry, DataSink, KnowledgeStore, LLMBackend, Vault
+from liquid.tools import adapter_to_tools
 
 __all__ = [
     "APISchema",
@@ -74,4 +75,5 @@ __all__ = [
     "SyncRuntimeError",
     "Vault",
     "VaultError",
+    "adapter_to_tools",
 ]

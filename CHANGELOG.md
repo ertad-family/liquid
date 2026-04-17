@@ -2,6 +2,18 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.6.0] - 2026-04-17
+
+### Added
+- `AdapterConfig.to_tools(format)` method generates tool definitions for Anthropic, OpenAI, LangChain, and MCP formats
+- `liquid.tools` module with `adapter_to_tools()`, `build_args_model()` helpers
+- GitHub Actions CI workflow (lint + test on every push/PR)
+- GitHub Actions publish workflow (auto-publish to PyPI on git tag)
+- `liquid.adapter_to_tools` top-level export
+
+### Changed
+- Version bumped to 0.6.0
+
 ## [0.4.0] - 2026-04-13
 
 ### Added
