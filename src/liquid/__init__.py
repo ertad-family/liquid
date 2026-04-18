@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 
 from liquid.agent_tools import (
     check_quota,
@@ -50,6 +50,15 @@ from liquid.models import (
     SyncResult,
 )
 from liquid.models.response import FetchMeta, FetchResponse
+from liquid.normalize import (
+    Money,
+    PaginationEnvelope,
+    normalize_datetime,
+    normalize_id,
+    normalize_money,
+    normalize_pagination,
+    normalize_response,
+)
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
 from liquid.query import QueryError, apply_query, validate_query
 from liquid.sync.known_limits import infer_limits, lookup_known_limits
@@ -93,6 +102,8 @@ __all__ = [
     "LiquidError",
     "MappedRecord",
     "MappingError",
+    "Money",
+    "PaginationEnvelope",
     "QueryError",
     "QuotaInfo",
     "RateLimitError",
@@ -116,6 +127,11 @@ __all__ = [
     "list_adapters",
     "list_canonical_intents",
     "lookup_known_limits",
+    "normalize_datetime",
+    "normalize_id",
+    "normalize_money",
+    "normalize_pagination",
+    "normalize_response",
     "to_tools",
     "validate_query",
 ]

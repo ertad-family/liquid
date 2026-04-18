@@ -2,6 +2,47 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.14.0] - 2026-04-17
+
+### Added (output normalization for cross-API canonical shapes)
+- `liquid.normalize` package — opt-in transformation of raw API payloads into
+  canonical shapes so agents stop burning tokens on Stripe-vs-PayPal-vs-Square
+  reconciliation:
+  - `Money` model (`amount_cents`, `currency`, `amount_decimal`, `original`)
+    and `normalize_money(value, *, currency_hint)` — recognises Stripe-style
+    `{amount, currency}`, PayPal-style `{value, currency_code}`, bare integers
+    + `currency_hint` (minor units), and bare `Decimal` / decimal strings
+    (major units). Honors zero-decimal (JPY/KRW/…) and three-decimal (BHD/…)
+    ISO 4217 currencies
+  - `normalize_datetime(value)` — ISO 8601 (with or without TZ, `Z` suffix,
+    date-only, microseconds, non-UTC offsets), Unix timestamp (seconds,
+    milliseconds auto-detected at the 10^12 threshold), numeric strings,
+    RFC 2822 (HTTP `Date` headers). Always returns an aware UTC `datetime`
+    or `None` (never raises)
+  - `PaginationEnvelope` model and `normalize_pagination(response, *,
+    items_key)` — recognises Stripe (`{object:"list", data, has_more}`),
+    DRF (`{results, next, previous, count}`), page-number
+    (`{items, page, per_page, total_pages, total}`), raw arrays, and
+    generic cursor envelopes. Never fabricates fields — leaves `None` when
+    ambiguous
+  - `normalize_id(obj, *, preferred_keys)` — finds the canonical identifier
+    with lookup order `preferred_keys → id/_id/uid/uuid/guid/key/name →
+    *_id fallback`. Returns stringified id or `None`
+  - `normalize_response(data, *, hints)` — recursive walk that detects money
+    / datetime / pagination shapes, with optional `hints` dict for
+    field-name overrides (`money_fields`, `datetime_fields`,
+    `currency_hint`). Pure — never mutates the input
+- `Liquid(normalize_output=True, normalize_hints=...)` — opt-in constructor
+  flag (defaults to `False` for backward compat) that routes `liquid.execute()`
+  / `liquid.execute_batch()` / `liquid.fetch()` responses through
+  `normalize_response()` before returning
+- Public exports at `liquid.*`: `Money`, `PaginationEnvelope`,
+  `normalize_money`, `normalize_datetime`, `normalize_pagination`,
+  `normalize_id`, `normalize_response`
+
+### Changed
+- Version bumped to 0.14.0
+
 ## [0.13.0] - 2026-04-17
 
 ### Added (state-query tools for agent ambient context)

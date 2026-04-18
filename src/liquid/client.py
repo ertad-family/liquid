@@ -64,6 +64,8 @@ class Liquid:
         rate_limiter: RateLimiter | None = None,
         contribute_telemetry: bool = False,
         telemetry_endpoint: str | None = None,
+        normalize_output: bool = False,
+        normalize_hints: dict[str, Any] | None = None,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -75,6 +77,8 @@ class Liquid:
         self._retry_policy = retry_policy
         self.cache = cache
         self.rate_limiter = rate_limiter
+        self.normalize_output = normalize_output
+        self.normalize_hints = normalize_hints
 
         self.telemetry: TelemetryCollector | None = None
         if contribute_telemetry:
@@ -92,6 +96,17 @@ class Liquid:
         from liquid.action.proposer import ActionProposer
 
         self._action_proposer = ActionProposer(llm, knowledge)
+
+    def _maybe_normalize(self, data: Any) -> Any:
+        """Apply output normalization when the ``normalize_output`` flag is on.
+
+        No-op otherwise — returns ``data`` unchanged.
+        """
+        if not self.normalize_output:
+            return data
+        from liquid.normalize import normalize_response
+
+        return normalize_response(data, hints=self.normalize_hints)
 
     async def discover(self, url: str) -> APISchema:
         """Phase 1: Discover the API at the given URL."""
@@ -358,7 +373,10 @@ class Liquid:
             )
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
-            return [r.mapped_data for r in mapped]
+            records = [r.mapped_data for r in mapped]
+            if self.normalize_output:
+                records = [self._maybe_normalize(r) for r in records]
+            return records
 
     async def fetch_with_meta(
         self,
@@ -696,6 +714,9 @@ class Liquid:
                 idempotency_key=idempotency_key,
             )
 
+        if self.normalize_output and result.response_body is not None:
+            result = result.model_copy(update={"response_body": self._maybe_normalize(result.response_body)})
+
         await self._emit_action_event(config.config_id, result)
         return result
 
@@ -832,6 +853,15 @@ class Liquid:
                 auth_ref=config.auth_ref,
                 on_error=error_policy,
             )
+
+        if self.normalize_output:
+            normalized_results = [
+                r.model_copy(update={"response_body": self._maybe_normalize(r.response_body)})
+                if r.response_body is not None
+                else r
+                for r in result.results
+            ]
+            result = result.model_copy(update={"results": normalized_results})
 
         for action_result in result.results:
             await self._emit_action_event(config.config_id, action_result)
