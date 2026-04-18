@@ -2,6 +2,42 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.15.0] - 2026-04-17
+
+### Added (agent-side data reduction — aggregation + text search)
+- `liquid.aggregate(adapter, endpoint, *, group_by, agg, filter, limit,
+  params)` — fetches an endpoint's pages, optionally filters via the 0.10.0
+  query DSL, buckets records by one-or-many `group_by` fields and computes
+  per-bucket aggregates. Supported ops: `count`, `sum`, `avg`, `min`, `max`,
+  `first`, `last`, `distinct`. Returns
+  `{groups: [...], total_records_scanned, pages_fetched, truncated}`. Caps
+  scans at 10,000 records by default so a misconfigured call cannot burn
+  through a 2M-row dataset.
+- `liquid.text_search(adapter, endpoint, query, *, fields, limit, scan_limit,
+  params)` — walks pages, scores every record with a BM25-lite token-match
+  scorer (length-dampened so hits in short fields like `subject` outrank hits
+  in long `body` fields), and returns the top-N matches as
+  `[{record, score, matched_fields}, ...]` with scores normalised to `[0, 1]`.
+- `adapter` argument accepts either an `AdapterConfig` or a registered service
+  name (resolved through the registry's `get_by_service` / `list_all`).
+- Both methods auto-walk pagination using the endpoint's declared
+  `PaginationType` (cursor, offset, page-number, link-header) and a common
+  envelope-aware record selector (handles `{data: [...]}`, `{results: [...]}`,
+  `{items: [...]}`, or bare arrays).
+- Pure composable helpers in `liquid.query`:
+  `aggregate_records`, `aggregate_async`, `search_records`, `search_async`,
+  and `AggregateError`.
+- `liquid_aggregate` and `liquid_text_search` tool definitions exposed through
+  `to_tools()` so agent frameworks wiring a `Liquid` instance get both tools
+  alongside the state-query tools from 0.13.0. Definitions live in
+  `liquid.agent_tools.query`.
+- Public exports at `liquid.*`: `aggregate`, `text_search`,
+  `aggregate_async`, `aggregate_records`, `search_async`, `search_records`,
+  `AggregateError`.
+
+### Changed
+- Version bumped to 0.15.0.
+
 ## [0.14.0] - 2026-04-17
 
 ### Added (output normalization for cross-API canonical shapes)

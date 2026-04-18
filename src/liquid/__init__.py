@@ -1,13 +1,15 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 from liquid.agent_tools import (
+    aggregate,
     check_quota,
     check_rate_limit,
     get_adapter_info,
     health_check,
     list_adapters,
+    text_search,
     to_tools,
 )
 from liquid.cache import InMemoryCache
@@ -60,7 +62,16 @@ from liquid.normalize import (
     normalize_response,
 )
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
-from liquid.query import QueryError, apply_query, validate_query
+from liquid.query import (
+    AggregateError,
+    QueryError,
+    aggregate_async,
+    aggregate_records,
+    apply_query,
+    search_async,
+    search_records,
+    validate_query,
+)
 from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
@@ -77,6 +88,7 @@ __all__ = [
     "ActionResult",
     "AdapterConfig",
     "AdapterRegistry",
+    "AggregateError",
     "AuthError",
     "AuthRequirement",
     "AuthSetupError",
@@ -117,6 +129,9 @@ __all__ = [
     "Vault",
     "VaultError",
     "adapter_to_tools",
+    "aggregate",
+    "aggregate_async",
+    "aggregate_records",
     "apply_query",
     "check_quota",
     "check_rate_limit",
@@ -132,6 +147,9 @@ __all__ = [
     "normalize_money",
     "normalize_pagination",
     "normalize_response",
+    "search_async",
+    "search_records",
+    "text_search",
     "to_tools",
     "validate_query",
 ]

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from liquid.agent_tools.query import QUERY_TOOL_DEFINITIONS, aggregate, text_search
 from liquid.agent_tools.state import (
     STATE_TOOL_DEFINITIONS,
     check_quota,
@@ -32,12 +33,15 @@ if TYPE_CHECKING:
     from liquid.tools import ToolFormat, ToolStyle
 
 __all__ = [
+    "QUERY_TOOL_DEFINITIONS",
     "STATE_TOOL_DEFINITIONS",
+    "aggregate",
     "check_quota",
     "check_rate_limit",
     "get_adapter_info",
     "health_check",
     "list_adapters",
+    "text_search",
     "to_tools",
 ]
 
@@ -87,6 +91,8 @@ def to_tools(
 
     if include_state_tools:
         for tool in STATE_TOOL_DEFINITIONS:
+            tools.append(_format_tool(dict(tool), format))
+        for tool in QUERY_TOOL_DEFINITIONS:
             tools.append(_format_tool(dict(tool), format))
 
     return tools

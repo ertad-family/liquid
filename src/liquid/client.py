@@ -518,6 +518,103 @@ class Liquid:
         dsl = await self._nl_to_dsl(config, endpoint, query)
         return await self.search(config, endpoint, where=dsl, limit=limit, fields=fields)
 
+    async def aggregate(
+        self,
+        adapter: str | AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        group_by: str | list[str] | None = None,
+        agg: dict[str, str] | None = None,
+        filter: dict[str, Any] | None = None,
+        limit: int | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Group + aggregate records on an endpoint without pulling them into the agent.
+
+        Fetches pages, applies an optional ``filter`` (Liquid query DSL),
+        buckets by ``group_by`` field(s), and returns per-bucket aggregates
+        (``count``, ``sum``, ``avg``, ``min``, ``max``, ``first``, ``last``,
+        ``distinct``). Stops early when ``limit`` records have been scanned —
+        the default cap is ``10_000`` so a misconfigured call can't burn
+        through a huge dataset.
+        """
+        from liquid.query._paginator import _walk_pages
+        from liquid.query.aggregate import aggregate_async
+
+        config = await self._resolve_adapter(adapter)
+        ep_path = endpoint or config.sync.endpoints[0]
+
+        page_iter = _walk_pages(self, config, ep_path, params=params)
+        return await aggregate_async(
+            page_iter,
+            group_by=group_by,
+            agg=agg,
+            filter=filter,
+            limit=limit,
+        )
+
+    async def text_search(
+        self,
+        adapter: str | AdapterConfig,
+        endpoint: str | None = None,
+        query: str = "",
+        *,
+        fields: list[str] | None = None,
+        limit: int = 50,
+        scan_limit: int | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Rank records by relevance to a free-text ``query``.
+
+        Walks the endpoint's pages, scores every record with a lightweight
+        BM25-style scorer across ``fields`` (or every string field when
+        unspecified), and returns the top ``limit`` matches — each with a
+        normalized score in ``[0, 1]`` and the list of fields that matched.
+        """
+        from liquid.query._paginator import _walk_pages
+        from liquid.query.text_search import search_async
+
+        config = await self._resolve_adapter(adapter)
+        ep_path = endpoint or config.sync.endpoints[0]
+
+        page_iter = _walk_pages(self, config, ep_path, params=params)
+        return await search_async(
+            page_iter,
+            query,
+            fields=fields,
+            limit=limit,
+            scan_limit=scan_limit,
+        )
+
+    async def _resolve_adapter(self, adapter: str | AdapterConfig) -> AdapterConfig:
+        """Accept either an AdapterConfig or a registered service name."""
+        if isinstance(adapter, AdapterConfig):
+            return adapter
+        if not isinstance(adapter, str):
+            raise TypeError(f"adapter must be AdapterConfig or str, got {type(adapter).__name__}")
+
+        if self.registry is None:
+            raise ValueError(
+                "Resolving adapters by name requires a registry — either pass an AdapterConfig "
+                "directly or construct Liquid(registry=...).",
+            )
+
+        # Prefer the registry's own service lookup when present.
+        if hasattr(self.registry, "get_by_service"):
+            matches = await self.registry.get_by_service(adapter)
+            if matches:
+                return matches[0]
+
+        # Fall back to scanning list_all() for a case-insensitive match.
+        if hasattr(self.registry, "list_all"):
+            all_configs = await self.registry.list_all()
+            name_lower = adapter.lower()
+            for cfg in all_configs:
+                if cfg.schema_.service_name.lower() == name_lower:
+                    return cfg
+
+        raise ValueError(f"No adapter named {adapter!r} is registered")
+
     async def _nl_to_dsl(
         self,
         config: AdapterConfig,
