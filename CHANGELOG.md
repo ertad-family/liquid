@@ -2,6 +2,40 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.13.0] - 2026-04-17
+
+### Added (state-query tools for agent ambient context)
+- `liquid.agent_tools` package exposing five state-query helpers agents can
+  call to inspect a live Liquid client without keeping anything in working
+  memory:
+  - `check_quota(liquid)` — Cloud credit balance / plan / reset time;
+    degrades to `{cloud_enabled: False, ...}` when running local-only or
+    when the Cloud `GET /v1/quota` endpoint is unreachable
+  - `check_rate_limit(liquid, adapter_name)` — current bucket state
+    (`available_tokens`, `capacity`, `wait_seconds`, `source`) pulled from
+    `liquid.sync.rate_limiter.RateLimiter`; returns `rate_limited: False`
+    when no bucket exists
+  - `list_adapters(liquid)` — one-line summary per registered adapter
+    (name, source_url, endpoint counts, connected_at)
+  - `get_adapter_info(liquid, adapter_name)` — detailed (schema-free) view
+    of a single adapter: endpoints, capabilities, auth_type, rate_limits
+  - `health_check(liquid)` — meta status (version, adapters_count,
+    cloud_enabled, cloud_reachable, cache_enabled, rate_limiting_enabled)
+- `liquid.agent_tools.to_tools(liquid_or_adapter, format, style, *,
+  include_state_tools=True)` — convenience wrapper that builds per-adapter
+  tools and (by default) merges the five state-query tool definitions so any
+  agent framework binding a Liquid client gets ambient-context tools for
+  free. Backwards-compatible: `AdapterConfig.to_tools()` and
+  `liquid.tools.adapter_to_tools()` are unchanged
+- `STATE_TOOL_DEFINITIONS` — importable tool schemas with rich,
+  agent-facing descriptions (tells the agent *when* to call each tool)
+- Public exports: `liquid.check_quota`, `liquid.check_rate_limit`,
+  `liquid.list_adapters`, `liquid.get_adapter_info`, `liquid.health_check`,
+  `liquid.to_tools`
+
+### Changed
+- Version bumped to 0.13.0
+
 ## [0.12.0] - 2026-04-17
 
 ### Added (structured recovery actions for agent self-healing)

@@ -1,7 +1,15 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
+from liquid.agent_tools import (
+    check_quota,
+    check_rate_limit,
+    get_adapter_info,
+    health_check,
+    list_adapters,
+    to_tools,
+)
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
 from liquid.exceptions import (
@@ -99,9 +107,15 @@ __all__ = [
     "VaultError",
     "adapter_to_tools",
     "apply_query",
+    "check_quota",
+    "check_rate_limit",
+    "get_adapter_info",
     "get_intent",
+    "health_check",
     "infer_limits",
+    "list_adapters",
     "list_canonical_intents",
     "lookup_known_limits",
+    "to_tools",
     "validate_query",
 ]
