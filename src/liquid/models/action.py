@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from liquid.exceptions import Recovery  # noqa: TC001  (pydantic needs runtime type)
+
 
 class ActionErrorType(StrEnum):
     VALIDATION_ERROR = "validation_error"
@@ -24,6 +26,7 @@ class ActionError(BaseModel):
     details: dict[str, Any] | None = None
     recovery_hint: str | None = None
     auto_repair_available: bool = False
+    recovery: Recovery | None = None
 
 
 class ActionMapping(BaseModel):

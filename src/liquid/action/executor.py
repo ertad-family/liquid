@@ -13,7 +13,7 @@ import httpx  # noqa: TC002
 from liquid.action.builder import RequestBodyBuilder
 from liquid.action.path import PathResolver
 from liquid.action.validator import RequestValidator
-from liquid.exceptions import RateLimitError, ServiceDownError
+from liquid.exceptions import RateLimitError, Recovery, ServiceDownError, ToolCall
 from liquid.models.action import ActionConfig, ActionError, ActionErrorType, ActionResult
 from liquid.sync.retry import WRITE_RETRY_DEFAULTS, RetryPolicy, with_retry
 
@@ -47,11 +47,21 @@ def _action_error_for_exception(exc: RateLimitError | ServiceDownError) -> Actio
             message=str(exc),
             recovery_hint=hint,
             details={"retry_after": retry_after} if retry_after else None,
+            recovery=Recovery(
+                hint=hint,
+                retry_safe=True,
+                retry_after_seconds=float(retry_after) if retry_after else None,
+            ),
         )
     return ActionError(
         type=ActionErrorType.SERVER_ERROR,
         message=str(exc),
         recovery_hint="Upstream server error — retry with backoff",
+        recovery=Recovery(
+            hint="Upstream server error — retry with backoff",
+            retry_safe=True,
+            retry_after_seconds=5.0,
+        ),
     )
 
 
@@ -61,47 +71,66 @@ def _action_error_for_status(status_code: int, message: str) -> ActionError:
     details: dict[str, Any] = {"status": status_code, "body": message}
 
     if status_code in (401, 403):
+        hint = "Credentials invalid for this action"
+        next_action = (
+            ToolCall(tool="store_credentials", description="Store fresh credentials") if status_code == 401 else None
+        )
         return ActionError(
             type=error_type,
             message=message,
-            recovery_hint="Credentials invalid for this action",
+            recovery_hint=hint,
             details=details,
+            recovery=Recovery(hint=hint, next_action=next_action, retry_safe=False),
         )
     if status_code == 404:
+        hint = "Resource not found — check ID or run repair_adapter()"
         return ActionError(
             type=error_type,
             message=message,
-            recovery_hint="Resource not found — check ID or run repair_adapter()",
+            recovery_hint=hint,
             auto_repair_available=True,
             details=details,
+            recovery=Recovery(
+                hint=hint,
+                next_action=ToolCall(tool="repair_adapter", description="Re-discover the API"),
+                retry_safe=False,
+            ),
         )
     if status_code == 409:
+        hint = "Resource conflict — check if it already exists or use idempotency_key"
         return ActionError(
             type=error_type,
             message=message,
-            recovery_hint="Resource conflict — check if it already exists or use idempotency_key",
+            recovery_hint=hint,
             details=details,
+            recovery=Recovery(hint=hint, retry_safe=False),
         )
     if status_code == 422:
+        hint = "Invalid request data — check request_schema requirements"
         return ActionError(
             type=error_type,
             message=message,
-            recovery_hint="Invalid request data — check request_schema requirements",
+            recovery_hint=hint,
             details=details,
+            recovery=Recovery(hint=hint, retry_safe=False),
         )
     if status_code == 400:
+        hint = "Bad request — check request payload format"
         return ActionError(
             type=error_type,
             message=message,
-            recovery_hint="Bad request — check request payload format",
+            recovery_hint=hint,
             details=details,
+            recovery=Recovery(hint=hint, retry_safe=False),
         )
     if status_code >= 500:
+        hint = "Upstream server error — retry with backoff"
         return ActionError(
             type=error_type,
             message=message,
-            recovery_hint="Upstream server error — retry with backoff",
+            recovery_hint=hint,
             details=details,
+            recovery=Recovery(hint=hint, retry_safe=True, retry_after_seconds=5.0),
         )
     return ActionError(
         type=error_type,
@@ -163,6 +192,11 @@ class ActionExecutor:
                     message=f"Endpoint {action.endpoint_method} {action.endpoint_path} not found in schema",
                     recovery_hint="Endpoint missing from schema — run repair_adapter() to re-discover",
                     auto_repair_available=True,
+                    recovery=Recovery(
+                        hint="Endpoint missing from schema — run repair_adapter() to re-discover",
+                        next_action=ToolCall(tool="repair_adapter", description="Re-discover the API"),
+                        retry_safe=False,
+                    ),
                 ),
             )
 
@@ -181,6 +215,10 @@ class ActionExecutor:
                         message="Request validation failed",
                         details={"errors": errors},
                         recovery_hint="Fix request data to match request_schema requirements",
+                        recovery=Recovery(
+                            hint="Fix request data to match request_schema requirements",
+                            retry_safe=False,
+                        ),
                     ),
                 )
 
@@ -378,6 +416,10 @@ class ActionExecutor:
                         message=gql_errors[0].get("message", "GraphQL error"),
                         details={"errors": gql_errors},
                         recovery_hint="GraphQL mutation returned errors — check field arguments against schema",
+                        recovery=Recovery(
+                            hint="GraphQL mutation returned errors — check field arguments against schema",
+                            retry_safe=False,
+                        ),
                     ),
                     idempotency_key=idem_key,
                 )
@@ -472,6 +514,10 @@ class ActionExecutor:
                             type=ActionErrorType.SERVER_ERROR,
                             message=resp_body.get("result", "MCP tool error") if resp_body else "MCP tool error",
                             recovery_hint="MCP tool returned an error — verify tool arguments",
+                            recovery=Recovery(
+                                hint="MCP tool returned an error — verify tool arguments",
+                                retry_safe=False,
+                            ),
                         ),
                     )
 
@@ -495,6 +541,11 @@ class ActionExecutor:
                     type=ActionErrorType.SERVER_ERROR,
                     message=f"MCP tool call failed: {exc}",
                     recovery_hint="MCP tool call failed — check MCP server connectivity and tool availability",
+                    recovery=Recovery(
+                        hint="MCP tool call failed — check MCP server connectivity and tool availability",
+                        retry_safe=True,
+                        retry_after_seconds=5.0,
+                    ),
                 ),
             )
 

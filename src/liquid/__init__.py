@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
@@ -14,8 +14,10 @@ from liquid.exceptions import (
     LiquidError,
     MappingError,
     RateLimitError,
+    Recovery,
     ServiceDownError,
     SyncRuntimeError,
+    ToolCall,
     VaultError,
 )
 from liquid.intent import CANONICAL_INTENTS, Intent, IntentConfig, get_intent
@@ -87,10 +89,12 @@ __all__ = [
     "QuotaInfo",
     "RateLimitError",
     "RateLimiter",
+    "Recovery",
     "ServiceDownError",
     "SyncConfig",
     "SyncResult",
     "SyncRuntimeError",
+    "ToolCall",
     "Vault",
     "VaultError",
     "adapter_to_tools",

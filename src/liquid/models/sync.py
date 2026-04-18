@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from liquid.exceptions import Recovery  # noqa: TC001  (pydantic needs runtime type)
+
 
 class SyncErrorType(StrEnum):
     FIELD_NOT_FOUND = "field_not_found"
@@ -24,6 +26,7 @@ class SyncError(BaseModel):
     details: dict[str, Any] | None = None
     recovery_hint: str | None = None
     auto_repair_available: bool = False
+    recovery: Recovery | None = None
 
 
 class SyncResult(BaseModel):

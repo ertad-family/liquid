@@ -2,6 +2,36 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.12.0] - 2026-04-17
+
+### Added (structured recovery actions for agent self-healing)
+- `Recovery` and `ToolCall` models in `liquid.exceptions` — errors now carry an
+  executable recovery plan instead of just a text hint
+- `Recovery.hint` (free text), `Recovery.next_action: ToolCall | None`
+  (executable), `Recovery.retry_safe: bool`, `Recovery.retry_after_seconds: float | None`
+- `ToolCall.tool` (canonical tool name, e.g. `repair_adapter`, `store_credentials`),
+  `ToolCall.args`, `ToolCall.description`
+- `LiquidError.recovery: Recovery | None` field alongside legacy
+  `recovery_hint: str | None` (fully backward-compatible — hint is derived from
+  `recovery.hint` when only `recovery` is provided; `auto_repair_available` is
+  derived when `recovery.next_action` is set)
+- `ActionError.recovery` and `SyncError.recovery` fields on the pydantic models
+- `Fetcher._check_response()` now populates `Recovery` with structured
+  `next_action` for every HTTP error: 401 → `store_credentials`, 404/410 →
+  `repair_adapter`, 429 → `retry_safe=True` with `retry_after_seconds`,
+  5xx → `retry_safe=True`, etc.
+- `ActionExecutor` populates `Recovery` for all HTTP error paths, validation
+  errors, GraphQL errors, and MCP errors
+- Public exports: `liquid.Recovery`, `liquid.ToolCall`
+
+### Changed
+- Version bumped to 0.12.0
+- `LiquidError.to_dict()` now includes a serialized `"recovery"` key
+- `EndpointGoneError.from_response()` now emits structured `Recovery` with
+  `next_action=ToolCall(tool="repair_adapter", ...)`
+- `RateLimitError` accepts the new `recovery` kwarg; existing positional and
+  keyword signatures still work
+
 ## [0.11.0] - 2026-04-17
 
 ### Added (intent layer — canonical operations across APIs)

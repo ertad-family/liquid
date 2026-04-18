@@ -2,25 +2,73 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel, Field
+
 if TYPE_CHECKING:
     from liquid.sync.quota import QuotaInfo
 
 
+class ToolCall(BaseModel):
+    """Suggested tool invocation for recovery.
+
+    Distinct from ``liquid.models.llm.ToolCall`` (an LLM-side tool invocation with id).
+    This ``ToolCall`` describes *what an agent should do next* to recover from an error:
+    a canonical tool name (e.g. ``"repair_adapter"``, ``"store_credentials"``), the
+    arguments it should pass, and a human-readable description.
+    """
+
+    tool: str
+    """Canonical tool name, e.g. ``"repair_adapter"`` or ``"store_credentials"``."""
+
+    args: dict[str, Any] = Field(default_factory=dict)
+    """Arguments the agent should pass when invoking ``tool``."""
+
+    description: str = ""
+    """Human-readable explanation of what this call does."""
+
+
+class Recovery(BaseModel):
+    """Structured recovery metadata — agent can execute ``next_action`` directly.
+
+    Replaces the ad-hoc ``recovery_hint: str`` pattern with a machine-executable
+    plan. ``hint`` remains available for humans (and for backward compatibility
+    with code that reads ``LiquidError.recovery_hint``).
+    """
+
+    hint: str
+    """Free-text description (backward-compat with legacy ``recovery_hint``)."""
+
+    next_action: ToolCall | None = None
+    """Executable action the agent can dispatch without parsing free text."""
+
+    retry_safe: bool = False
+    """Whether retrying the failed operation as-is is safe (idempotent)."""
+
+    retry_after_seconds: float | None = None
+    """If the retry is time-gated (e.g. 429), how long to wait before retrying."""
+
+
 class LiquidError(Exception):
-    """Base exception with optional recovery metadata for agents."""
+    """Base exception with optional structured recovery metadata for agents."""
 
     def __init__(
         self,
         message: str = "",
         *,
         recovery_hint: str | None = None,
+        recovery: Recovery | None = None,
         auto_repair_available: bool = False,
         details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
-        self.recovery_hint = recovery_hint
-        self.auto_repair_available = auto_repair_available
+        self.recovery = recovery
+        # Backward compat: derive hint from recovery if only recovery is set.
+        self.recovery_hint = recovery_hint or (recovery.hint if recovery else None)
+        # Derive auto_repair_available from next_action if not explicitly set.
+        self.auto_repair_available = auto_repair_available or (
+            recovery is not None and recovery.next_action is not None
+        )
         self.details = details or {}
 
     def to_dict(self) -> dict[str, Any]:
@@ -29,6 +77,7 @@ class LiquidError(Exception):
             "type": type(self).__name__,
             "message": self.message,
             "recovery_hint": self.recovery_hint,
+            "recovery": self.recovery.model_dump() if self.recovery else None,
             "auto_repair_available": self.auto_repair_available,
             "details": self.details,
         }
@@ -66,11 +115,12 @@ class RateLimitError(SyncRuntimeError):
         *,
         quota_info: QuotaInfo | None = None,
         recovery_hint: str | None = None,
+        recovery: Recovery | None = None,
         auto_repair_available: bool = False,
         details: dict[str, Any] | None = None,
     ) -> None:
-        # Build hint if not provided
-        if recovery_hint is None:
+        # Build hint if not provided (and recovery is not providing one)
+        if recovery_hint is None and recovery is None:
             if retry_after:
                 recovery_hint = f"Retry after {retry_after:.0f} seconds"
             elif quota_info and quota_info.reset_in_seconds:
@@ -81,6 +131,7 @@ class RateLimitError(SyncRuntimeError):
         super().__init__(
             message,
             recovery_hint=recovery_hint,
+            recovery=recovery,
             auto_repair_available=auto_repair_available,
             details=details,
         )
@@ -105,13 +156,27 @@ class EndpointGoneError(SyncRuntimeError):
             hint = f"Try {suggested_path} (endpoint may have moved)"
             return cls(
                 message,
-                recovery_hint=hint,
+                recovery=Recovery(
+                    hint=hint,
+                    next_action=ToolCall(
+                        tool="repair_adapter",
+                        description=f"Re-run discovery; suggested replacement path {suggested_path}",
+                    ),
+                    retry_safe=False,
+                ),
                 auto_repair_available=True,
                 details=details,
             )
         return cls(
             message,
-            recovery_hint="Endpoint removed — run liquid.repair_adapter() to re-discover",
+            recovery=Recovery(
+                hint="Endpoint removed — run liquid.repair_adapter() to re-discover",
+                next_action=ToolCall(
+                    tool="repair_adapter",
+                    description="Re-run discovery to find new endpoint",
+                ),
+                retry_safe=False,
+            ),
             auto_repair_available=True,
             details=details,
         )

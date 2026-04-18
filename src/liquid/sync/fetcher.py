@@ -11,7 +11,9 @@ from liquid.exceptions import (
     AuthError,
     EndpointGoneError,
     RateLimitError,
+    Recovery,
     ServiceDownError,
+    ToolCall,
 )
 from liquid.models.schema import Endpoint  # noqa: TC001
 from liquid.sync.pagination import NoPagination, PaginationStrategy
@@ -162,36 +164,66 @@ def _check_response(response: httpx.Response) -> None:
 
     status = response.status_code
     text = response.text[:500]
+    details = {"status": status, "body": text}
 
     if status == 401:
         raise AuthError(
             f"Auth failed (401): {text}",
-            recovery_hint="Credentials invalid — re-store via store_credentials()",
-            details={"status": 401, "body": text},
+            recovery=Recovery(
+                hint="Credentials invalid or expired — re-authenticate.",
+                next_action=ToolCall(
+                    tool="store_credentials",
+                    description="Store fresh credentials",
+                ),
+                retry_safe=False,
+            ),
+            details=details,
         )
     if status == 403:
         raise AuthError(
             f"Auth forbidden (403): {text}",
-            recovery_hint="Credentials lack permission for this endpoint",
-            details={"status": 403, "body": text},
+            recovery=Recovery(
+                hint="Credentials lack permission for this endpoint.",
+                retry_safe=False,
+            ),
+            details=details,
         )
     if status == 429:
         retry_after = response.headers.get("retry-after")
+        retry_after_s = float(retry_after) if retry_after else None
         raise RateLimitError(
             f"Rate limited: {text}",
-            retry_after=float(retry_after) if retry_after else None,
-            details={"status": 429, "body": text},
+            retry_after=retry_after_s,
+            recovery=Recovery(
+                hint=f"Rate limited. Retry after {retry_after_s or 60}s.",
+                retry_safe=True,
+                retry_after_seconds=retry_after_s or 60.0,
+            ),
+            details=details,
         )
-    if status == 404 or status == 410:
-        raise EndpointGoneError.from_response(
+    if status in (404, 410):
+        raise EndpointGoneError(
             f"Endpoint gone ({status}): {text}",
-            details={"status": status, "body": text},
+            recovery=Recovery(
+                hint="Endpoint missing — run repair_adapter() to re-discover.",
+                next_action=ToolCall(
+                    tool="repair_adapter",
+                    description="Re-run discovery to find new endpoint",
+                ),
+                retry_safe=False,
+            ),
+            auto_repair_available=True,
+            details=details,
         )
     if status >= 500:
         raise ServiceDownError(
             f"Server error ({status}): {text}",
-            recovery_hint="Upstream service error — retry with backoff",
-            details={"status": status, "body": text},
+            recovery=Recovery(
+                hint="Upstream server error — retry with backoff.",
+                retry_safe=True,
+                retry_after_seconds=5.0,
+            ),
+            details=details,
         )
 
     response.raise_for_status()
