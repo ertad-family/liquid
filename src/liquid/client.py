@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from liquid.action.batch import BatchResult
     from liquid.action.reviewer import ActionReview
+    from liquid.estimate import FetchEstimate
     from liquid.events import EventHandler
     from liquid.models.response import FetchResponse
     from liquid.models.schema import Endpoint
@@ -66,6 +67,7 @@ class Liquid:
         telemetry_endpoint: str | None = None,
         normalize_output: bool = False,
         normalize_hints: dict[str, Any] | None = None,
+        include_meta: bool = False,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -79,6 +81,7 @@ class Liquid:
         self.rate_limiter = rate_limiter
         self.normalize_output = normalize_output
         self.normalize_hints = normalize_hints
+        self.include_meta = include_meta
 
         self.telemetry: TelemetryCollector | None = None
         if contribute_telemetry:
@@ -191,8 +194,22 @@ class Liquid:
         key = f"{config.config_id}:{endpoint_path}" if endpoint_path else config.config_id
         await self.rate_limiter.seed(key, limits)
 
-    async def sync(self, config: AdapterConfig, cursor: str | None = None) -> SyncResult:
-        """Phase 4: Run a deterministic sync cycle."""
+    async def sync(
+        self,
+        config: AdapterConfig,
+        cursor: str | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> SyncResult:
+        """Phase 4: Run a deterministic sync cycle.
+
+        ``max_tokens`` is accepted for signature symmetry with
+        :meth:`fetch` / :meth:`execute` but is currently a no-op — sync
+        writes through a sink rather than returning records to the agent,
+        so there's nothing to trim. Keeping the kwarg avoids breaking
+        downstream callers that template the same signature.
+        """
+        _ = max_tokens  # accepted for API symmetry; see docstring
         for ep in config.sync.endpoints:
             await self._ensure_rate_limit_seeded(config, ep)
         client = self._http_client or httpx.AsyncClient()
@@ -322,7 +339,10 @@ class Liquid:
         config: AdapterConfig,
         endpoint: str | None = None,
         cache: int | str | bool | None = None,
-    ) -> list[dict[str, Any]]:
+        *,
+        max_tokens: int | None = None,
+        include_meta: bool | None = None,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         """Fetch data through an adapter — the primary way agents get data.
 
         If endpoint is None, fetches from the first endpoint in sync config.
@@ -333,6 +353,15 @@ class Liquid:
         - cache=int: use as TTL seconds for this call
         - cache="5m"/"1h"/...: parsed via parse_ttl
         - cache=None: use SyncConfig.cache_ttl default or Cache-Control header
+
+        Agent-friendly args:
+        - max_tokens: truncate the response to fit a rough token budget.
+          List responses drop trailing items; dicts trim oversize string
+          fields. When truncated, ``_meta.truncated`` is set (requires
+          ``include_meta=True`` or the instance flag).
+        - include_meta: when True, wrap the response as
+          ``{"data": [...], "_meta": {...}}`` with source/freshness/truncation
+          info. Defaults to the value set on the :class:`Liquid` instance.
         """
         from liquid.cache.ttl import parse_ttl
         from liquid.discovery.utils import managed_http_client
@@ -373,9 +402,35 @@ class Liquid:
             )
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
-            records = [r.mapped_data for r in mapped]
+            records: list[dict[str, Any]] = [r.mapped_data for r in mapped]
             if self.normalize_output:
                 records = [self._maybe_normalize(r) for r in records]
+
+            # Truncate to fit max_tokens, if requested.
+            truncated = False
+            truncated_at: str | None = None
+            if max_tokens is not None:
+                from liquid.truncate import apply_max_tokens
+
+                trunc = apply_max_tokens(records, max_tokens)
+                records = trunc.payload
+                truncated = trunc.truncated
+                truncated_at = trunc.truncated_at
+
+            effective_meta = self.include_meta if include_meta is None else include_meta
+            if effective_meta:
+                from liquid.meta import build_meta, wrap_with_meta
+
+                meta = build_meta(
+                    source="live",
+                    adapter=config.schema_.service_name,
+                    endpoint=ep_path,
+                    truncated=truncated,
+                    truncated_at=truncated_at,
+                    returned_items=len(records),
+                )
+                return wrap_with_meta(records, meta)
+
             return records
 
     async def fetch_with_meta(
@@ -412,7 +467,7 @@ class Liquid:
             select_fields,
         )
 
-        records = await self.fetch(config, endpoint, cache=cache)
+        records = await self.fetch(config, endpoint, cache=cache, include_meta=False)
         total = len(records)
 
         if summary:
@@ -476,7 +531,7 @@ class Liquid:
         _native_params, remaining = translate_to_params(where, target_ep)
 
         # Fetch (native param translation is a Phase 2 optimization).
-        all_records = await self.fetch(config, endpoint)
+        all_records = await self.fetch(config, endpoint, include_meta=False)
         total_scanned = len(all_records)
 
         # Apply local filter
@@ -661,6 +716,24 @@ class Liquid:
             return {}
         return result if isinstance(result, dict) else {}
 
+    async def estimate_fetch(
+        self,
+        adapter: str | AdapterConfig,
+        endpoint: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> FetchEstimate:
+        """Return a :class:`FetchEstimate` for an endpoint WITHOUT calling it.
+
+        Agents should call this before a heavy fetch to decide whether to
+        proceed as-is, page, narrow via query DSL, or switch to
+        :meth:`aggregate` / :meth:`text_search`. Accepts either an
+        :class:`AdapterConfig` or a registered service name.
+        """
+        from liquid.estimate import estimate_fetch as _estimate
+
+        config = await self._resolve_adapter(adapter)
+        return _estimate(config, endpoint, params=params)
+
     async def remaining_quota(
         self,
         config: AdapterConfig,
@@ -772,12 +845,23 @@ class Liquid:
         action_id: str,
         data: dict[str, Any],
         idempotency_key: str | None = None,
+        *,
+        max_tokens: int | None = None,
+        include_meta: bool | None = None,
     ) -> ActionResult:
         """Execute a write action by action_id.
 
         This is the primary way agents WRITE data through Liquid.
 
         Requires the action to have been verified (verified_by set).
+
+        Agent-friendly args:
+        - max_tokens: truncate ``response_body`` (list/dict) to a token
+          budget before returning. Sets ``_meta.truncated`` on the wrapped
+          body when ``include_meta=True``.
+        - include_meta: wrap the ``response_body`` in ``{"data": ..., "_meta": ...}``
+          so agents see the source/freshness/truncation. Defaults to the
+          instance-level ``Liquid.include_meta`` flag.
         """
         action = next((a for a in config.actions if a.action_id == action_id), None)
         if action is None:
@@ -814,7 +898,59 @@ class Liquid:
         if self.normalize_output and result.response_body is not None:
             result = result.model_copy(update={"response_body": self._maybe_normalize(result.response_body)})
 
+        result = self._apply_body_shaping(
+            result,
+            adapter=config.schema_.service_name,
+            endpoint=action.endpoint_path,
+            max_tokens=max_tokens,
+            include_meta=include_meta,
+        )
+
         await self._emit_action_event(config.config_id, result)
+        return result
+
+    def _apply_body_shaping(
+        self,
+        result: ActionResult,
+        *,
+        adapter: str,
+        endpoint: str,
+        max_tokens: int | None,
+        include_meta: bool | None,
+    ) -> ActionResult:
+        """Apply max_tokens + _meta wrapping to an ActionResult's response_body."""
+        body = result.response_body
+        if body is None:
+            return result
+
+        truncated = False
+        truncated_at: str | None = None
+        if max_tokens is not None:
+            from liquid.truncate import apply_max_tokens
+
+            trunc = apply_max_tokens(body, max_tokens)
+            body = trunc.payload
+            truncated = trunc.truncated
+            truncated_at = trunc.truncated_at
+
+        effective_meta = self.include_meta if include_meta is None else include_meta
+        if effective_meta:
+            from liquid.meta import build_meta, wrap_with_meta
+
+            meta = build_meta(
+                source="live",
+                adapter=adapter,
+                endpoint=endpoint,
+                truncated=truncated,
+                truncated_at=truncated_at,
+            )
+            body = wrap_with_meta(body, meta)
+        elif max_tokens is not None:
+            # Pure truncation without meta wrap.
+            pass
+
+        if body is not result.response_body:
+            return result.model_copy(update={"response_body": body})
         return result
 
     async def execute_intent(
@@ -857,7 +993,7 @@ class Liquid:
 
         # Read intent (has endpoint_path)
         if intent_config.endpoint_path:
-            return await self.fetch(config, intent_config.endpoint_path)
+            return await self.fetch(config, intent_config.endpoint_path, include_meta=False)
 
         msg = f"Intent config for {intent_name} has neither action_id nor endpoint_path"
         raise ValueError(msg)

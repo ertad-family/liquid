@@ -2,6 +2,68 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.16.0] - 2026-04-17
+
+### Added (agent-reasoning: predictable cost/budget before and during calls)
+
+- **Tool metadata on every `to_tools()` entry** — every per-endpoint tool now
+  carries a `metadata` block (``annotations`` for MCP, ``x-metadata`` under
+  ``function`` for OpenAI, ``metadata`` for Anthropic / LangChain) with the
+  signals agents need to decide *whether* and *how* to call a tool:
+  `cost_credits`, `typical_latency_ms`, `cached`, `cache_ttl_seconds`,
+  `idempotent`, `side_effects` (`read-only|write|delete`),
+  `rate_limit_impact`, `expected_result_size`
+  (`1 item|10-100 items|unknown`), and `related_tools` (sibling tools on
+  the same resource root, filtered to names actually present in the
+  current `to_tools()` output).
+- `to_tools(..., include_metadata=True)` — new opt-out flag (default
+  ``True``). Set to ``False`` to restore the pre-0.16 tool shape.
+- `liquid.estimate_fetch(adapter, endpoint, params=None) -> FetchEstimate`
+  — pre-flight size/cost prediction. Returns `expected_items`,
+  `expected_bytes`, `expected_tokens`, `expected_cost_credits`,
+  `expected_latency_ms`, `confidence` (`high|medium|low`), and `source`
+  (`empirical|openapi_declared|heuristic`). Uses empirical stats when the
+  adapter exposes them, falls back to the response-schema × declared
+  page-size when OpenAPI is rich enough, and uses a heuristic fallback
+  otherwise (single item for path-ends-in-`{id}` GETs, ~25 items for bare
+  collections).
+- `liquid_estimate_fetch` state tool — same helper surfaced through
+  `to_tools()` so agents can call it without extra wiring.
+- **`_meta` block on fetch / execute responses** — opt-in via
+  `Liquid(include_meta=True)` or `liquid.fetch(include_meta=True)` per
+  call. Wraps list responses as `{"data": [...], "_meta": {...}}` and
+  merges a `_meta` key into dict responses. The block carries `source`
+  (`live|cache|retry`), `age_seconds`, `fresh`, `truncated`,
+  `truncated_at`, `total_count`, `next_cursor`, `adapter`, `endpoint`,
+  `fetched_at`, and `confidence` (1.0 live, linearly decays with cache
+  age, 0.9 for successful retries).
+- **`max_tokens=N` on fetch / execute** — clips the response to a rough
+  token budget before returning. List responses drop trailing items (with
+  `_meta.truncated_at="item_<index>"`); dict responses trim oversize
+  string fields to `"...[truncated]"` (with
+  `_meta.truncated_at="field:<name>"`). When the payload already fits, the
+  call is a no-op.
+
+### Added modules
+
+- `liquid.agent_tools.metadata` — `build_tool_metadata`,
+  `classify_side_effects`, `expected_result_size`,
+  `derive_related_tools`, `tool_name_for_endpoint`.
+- `liquid.estimate` — `FetchEstimate` pydantic model + `estimate_fetch`
+  helper.
+- `liquid.meta` — `build_meta`, `wrap_with_meta` for response wrapping.
+- `liquid.truncate` — `apply_max_tokens`, `estimate_tokens`,
+  `TruncateResult`, plus the `MAX_UNTRUNCATED_STR_CHARS` /
+  `TOKEN_CHAR_RATIO` constants.
+
+### Changed
+
+- `Liquid.fetch()` now returns `list[dict]` by default (unchanged) or
+  `dict` when `include_meta=True` is set per call or on the constructor.
+- `Liquid(..., include_meta=False)` is the default — backward compat with
+  existing tests.
+- Version bumped to 0.16.0.
+
 ## [0.15.0] - 2026-04-17
 
 ### Added (agent-side data reduction — aggregation + text search)

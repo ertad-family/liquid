@@ -1,6 +1,6 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 from liquid.agent_tools import (
     aggregate,
@@ -12,8 +12,10 @@ from liquid.agent_tools import (
     text_search,
     to_tools,
 )
+from liquid.agent_tools import estimate_fetch as estimate_fetch_tool
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
+from liquid.estimate import FetchEstimate, estimate_fetch
 from liquid.exceptions import (
     ActionNotVerifiedError,
     AuthError,
@@ -101,6 +103,7 @@ __all__ = [
     "Endpoint",
     "EndpointGoneError",
     "EndpointKind",
+    "FetchEstimate",
     "FetchMeta",
     "FetchResponse",
     "FieldMapping",
@@ -135,6 +138,8 @@ __all__ = [
     "apply_query",
     "check_quota",
     "check_rate_limit",
+    "estimate_fetch",
+    "estimate_fetch_tool",
     "get_adapter_info",
     "get_intent",
     "health_check",
