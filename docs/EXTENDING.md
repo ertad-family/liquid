@@ -97,6 +97,85 @@ class RedisKnowledge:
         await self.redis.set(f"mapping:{service}:{target_model}", data)
 ```
 
+### AdapterRegistry — Persistent Adapter Catalog
+
+`Liquid.get_or_create(...)` reads/writes the registry to dedupe discovery + mapping across calls. An in-memory default ships as `InMemoryAdapterRegistry`; production callers persist to their database of choice.
+
+```python
+from liquid import AdapterRegistry, AdapterConfig
+
+class PostgresAdapterRegistry:
+    def __init__(self, pool):
+        self.pool = pool
+
+    async def get(self, url: str, target_model: str) -> AdapterConfig | None:
+        row = await self.pool.fetchrow(
+            "SELECT config FROM adapters WHERE url = $1 AND target_model = $2",
+            url, target_model,
+        )
+        return AdapterConfig.model_validate_json(row["config"]) if row else None
+
+    async def search(self, query: str) -> list[AdapterConfig]:
+        rows = await self.pool.fetch(
+            "SELECT config FROM adapters WHERE service_name ILIKE $1 OR url ILIKE $1",
+            f"%{query}%",
+        )
+        return [AdapterConfig.model_validate_json(r["config"]) for r in rows]
+
+    async def get_by_service(self, service_name: str) -> list[AdapterConfig]:
+        rows = await self.pool.fetch(
+            "SELECT config FROM adapters WHERE service_name = $1",
+            service_name,
+        )
+        return [AdapterConfig.model_validate_json(r["config"]) for r in rows]
+
+    async def save(self, config: AdapterConfig, target_model: str) -> None:
+        await self.pool.execute(
+            """
+            INSERT INTO adapters (config_id, url, service_name, target_model, config)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (config_id) DO UPDATE SET config = $5
+            """,
+            config.config_id,
+            config.schema_.source_url,
+            config.schema_.service_name,
+            target_model,
+            config.model_dump_json(),
+        )
+
+    async def list_all(self) -> list[AdapterConfig]:
+        rows = await self.pool.fetch("SELECT config FROM adapters")
+        return [AdapterConfig.model_validate_json(r["config"]) for r in rows]
+
+    async def delete(self, config_id: str) -> None:
+        await self.pool.execute("DELETE FROM adapters WHERE config_id = $1", config_id)
+```
+
+### CacheStore — Response Cache
+
+Optional response cache used by the runtime to skip duplicate fetches. Default is `InMemoryCache`; swap in Redis or a shared cache tier for multi-process deployments.
+
+```python
+from liquid import CacheStore
+from typing import Any
+
+class RedisCacheStore:
+    def __init__(self, redis):
+        self.redis = redis
+
+    async def get(self, key: str) -> dict[str, Any] | None:
+        import json
+        data = await self.redis.get(key)
+        return json.loads(data) if data else None
+
+    async def set(self, key: str, value: dict[str, Any], ttl: int) -> None:
+        import json
+        await self.redis.set(key, json.dumps(value), ex=ttl)
+
+    async def delete(self, key: str) -> None:
+        await self.redis.delete(key)
+```
+
 ## Custom Discovery Strategies
 
 Implement `DiscoveryStrategy` to add your own discovery method:

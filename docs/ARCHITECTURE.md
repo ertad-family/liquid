@@ -1,316 +1,392 @@
 # Liquid — Architecture
 
-## What Liquid Does
+## Overview
 
-Liquid solves one problem: connecting to external APIs without writing custom adapters.
+Liquid is a **transformation layer between AI agents and any HTTP API**. It separates one-time cognitive work (discovery + mapping) from per-call mechanical work (fetch + transform), so an agent can talk to a new API the way it already talks to tools it knows.
 
-Given a URL and a target data model, Liquid:
-1. Discovers the API (endpoints, auth, data types)
-2. Maps external fields to your domain model
-3. Generates a deterministic adapter config
-4. Syncs data on schedule without LLM involvement
-
-## Pipeline
+The pipeline has four stages:
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐     ┌─────────────┐
-│  Discovery   │ ──→ │ Auth Setup   │ ──→ │ Field Mapping  │ ──→ │ Sync Engine │
-│  (AI, once)  │     │ (AI + human) │     │ (AI + human)   │     │ (code, loop)│
-└─────────────┘     └──────────────┘     └────────────────┘     └─────────────┘
-       ▲                                        ▲                       │
-       │                                        │                       │
-       └── re-discovery on breaking change ─────┴───── error detected ──┘
+┌──────────────┐   ┌────────────┐   ┌────────────┐   ┌──────────────────┐
+│  Discovery   │──>│  Mapping   │──>│  Runtime   │──>│   Agent UX       │
+│  (AI, once)  │   │ (AI+human) │   │ (pure code)│   │ (shaping layer)  │
+└──────────────┘   └────────────┘   └────────────┘   └──────────────────┘
+       ▲                                   │
+       │                                   │
+       └───── re-discover on drift ────────┘
 ```
 
-### Phase 1: Discovery
+- **Discovery** finds what an API offers (endpoints, auth, pagination, rate limits) using whatever metadata is cheapest to obtain.
+- **Mapping** proposes field-level translations between the external response shape and the agent's target model — AI proposes, a human approves, corrections become permanent.
+- **Runtime** executes. No LLM per fetch. The same adapter config drives thousands of calls.
+- **Agent UX** reshapes responses for an LLM's context budget: DSL filters, aggregates, text search, normalization, truncation, verbosity control, structured recovery on failure.
 
-AI probes the target URL. Tries methods in order, stops at first success:
+Liquid is a library, not a service. It ships with in-memory defaults, a clean set of `Protocol`-based extension points (`Vault`, `LLMBackend`, `DataSink`, `KnowledgeStore`, `AdapterRegistry`, `CacheStore`), and is LLM-agnostic by construction.
+
+## Discovery pipeline
+
+`Liquid.discover(url)` runs discovery strategies in decreasing reliability order, stopping at the first that produces an `APISchema`:
 
 ```
 Level 1: MCP
-  Service publishes an MCP server → tools and resources are already
-  structured with types and descriptions. Cheapest and most reliable.
+  Service exposes an MCP server. Tools + resources are already typed and
+  described. Cheapest, most accurate, zero LLM involvement.
 
-Level 2: OpenAPI / GraphQL
-  Service has a documented spec → parse endpoints, request/response
-  schemas, auth requirements. AI reads the spec and builds a
-  normalized API description.
+Level 2: OpenAPI
+  Service has /openapi.json or /swagger.json. Parsed into Endpoint objects
+  with parameter schemas, response schemas (with $ref resolution), and
+  declared auth. No LLM unless a field description needs summarizing.
 
-Level 3: REST heuristics
-  No spec but has a REST API → AI probes common patterns
-  (/api/v1, /docs, /swagger.json), reads HTML documentation,
-  infers endpoints from examples.
+Level 3: GraphQL
+  Service exposes a /graphql endpoint with introspection. The schema is
+  translated into REST-shaped endpoints for the rest of the pipeline.
 
-Level 4: Browser Automation (Playwright)
-  No API at all → headless browser logs in, navigates pages,
-  identifies data tables and forms, builds a scraping adapter.
-  Last resort — most fragile, most expensive.
+Level 4: REST heuristic
+  No machine-readable spec. Liquid probes common paths (/api, /api/v1,
+  /docs, /swagger.json), reads HTML documentation, and lets the LLM infer
+  endpoints + shapes from examples.
+
+Level 5: Browser
+  Last resort (requires liquid-api[browser]). A headless Playwright session
+  logs in and captures network traffic to reverse-engineer a private API.
+  Slowest, most fragile — used only when no other strategy fits.
 ```
 
-Output: `APISchema` — normalized description of what the API offers.
+The pipeline is composable — implement `DiscoveryStrategy` (`async def discover(url) -> APISchema | None`) and plug it into a custom `DiscoveryPipeline`. See `EXTENDING.md`.
 
-### Phase 2: Auth Setup
-
-The hardest step. Every service has its own auth. Three complexity tiers:
+Auth is classified alongside discovery into three tiers:
 
 ```
-Tier A: OAuth with open registration (fully automatic)
-  Liquid generates an auth URL → user clicks → access granted.
-  Examples: Shopify, Stripe, Google Workspace
-
+Tier A: OAuth with open registration  (fully automatic)
 Tier B: OAuth requiring app registration (needs admin)
-  Service requires creating a "developer app" first.
-  Liquid detects this and escalates to the consumer's admin flow.
-  Done once per service — subsequent users get Tier A.
-  Examples: Bitrix24, amoCRM, most SaaS with developer portals
-
-Tier C: API key / credentials / no standard auth (needs human)
-  Legacy systems without OAuth.
-  Liquid escalates to consumer's support flow.
-  Examples: on-premise ERPs, legacy admin panels
+Tier C: API key / custom credentials  (needs human)
 ```
 
-Liquid doesn't handle auth UI — it classifies the auth type and provides the consumer with structured escalation data. The consumer decides how to present this to users.
+Liquid classifies and surfaces an `EscalationInfo`; it does not host auth UI.
 
-### Phase 3: Field Mapping
+## AI mapping
 
-AI maps external fields to the consumer's domain model.
+`Liquid.propose_mappings(schema, target_model)` returns a `MappingReview` with one `FieldMapping` per target field:
 
 ```
-External API                    Consumer Domain
-─────────────                   ───────────────
-orders[].total_price        →   transaction.amount
-orders[].created_at         →   transaction.date
-orders[].customer.email     →   transaction.counterparty
-refunds[].amount            →   transaction.amount (negative)
-payouts[].amount            →   bank_transfer.amount
+External response               Target model
+──────────────────              ──────────────
+orders[].total_price      -->   transaction.amount
+orders[].created_at       -->   transaction.date
+orders[].customer.email   -->   transaction.counterparty
+refunds[].amount          -->   transaction.amount      (transform: v * -1)
 ```
 
-The consumer provides a target model (Pydantic schema or similar). AI proposes mappings with confidence scores. Human reviews, corrects, approves.
+The review exposes `review.proposed`, `review.approve_all()`, per-field `approve()` / `reject()`, and `review.finalize()`. Corrections feed `KnowledgeStore.store_mapping(service, target_key, mappings)` — the *next* user mapping the same service + model gets an instant, high-confidence proposal.
 
-Corrections are stored and used for learning:
-- If 50 users connect Shopify, the mapping for user 51 is instant
-- Mappings are anonymized (no user data, only field-to-field patterns)
+Mappings are deterministic code afterwards. The LLM is not invoked on fetch.
 
-### Phase 4: Sync Engine
+## Runtime
 
-Deterministic. No AI. Runs on a schedule (cron).
+`Liquid.sync(config)` and `Liquid.fetch(config, endpoint)` are pure HTTP.
 
-1. Fetch data from external API using the adapter config
-2. Apply field mappings to transform into consumer's domain model
-3. Deliver transformed data to consumer's callback / storage
-4. Track sync state (last cursor, pagination tokens, etc.)
+```
+ Liquid.sync            Liquid.fetch
+      │                      │
+      v                      v
+┌──────────┐   ┌────────┐   ┌───────┐
+│ Fetcher  │──>│ Mapper │──>│ Sink  │
+└──────────┘   └────────┘   └───────┘
+      │                          │
+      │ credentials via Vault    │ DataSink.deliver()
+      │ rate limits observed     │
+      │ retry on transient errors│
+```
 
-If the external API changes (field removed, endpoint moved, auth expired):
-- Sync fails with a structured error
-- Consumer is notified
-- Re-discovery can be triggered automatically or manually
+- **Fetcher** — HTTP client, pulls credentials from the `Vault` by `auth_ref`, respects pagination, surfaces `Retry-After`, honours `CacheStore` when wired.
+- **Mapper** — walks every record through its `FieldMapping` list, applies optional transforms.
+- **Sink** — delivers mapped records. `CollectorSink` + `StdoutSink` ship as defaults; production callers implement their own (Postgres, Kafka, etc.).
 
----
+`Liquid.fetch` returns `list[dict]` to the caller and bypasses the sink. `Liquid.sync` streams through the sink and returns a `SyncResult` with counts, cursors, and structured errors.
 
-## Data Models
+Writes follow the same pattern via `Liquid.execute(config, action_id, data)`:
 
-### APISchema
+```
+┌──────────────┐   ┌────────────────┐
+│ ActionMapper │──>│ ActionExecutor │──> HTTP POST/PUT/PATCH/DELETE
+└──────────────┘   └────────────────┘
+      │                    │
+      │ canonical input    │ idempotency_key header
+      │ compiled to        │ retry policy
+      │ adapter fields     │ rate-limit aware
+```
+
+`execute_batch(..., concurrency=N, on_error="continue"|"abort")` runs many writes with bounded parallelism and a per-adapter rate-limit scheduler.
+
+## Agent UX layer
+
+The runtime returns structured data. The agent UX layer shapes that data so an LLM can act on it without burning a 200k-token context window.
+
+### Query DSL + server-side search
 
 ```python
-class Endpoint:
-    """A single API endpoint."""
-    path: str                       # "/orders"
-    method: str                     # "GET"
-    description: str                # AI-generated summary
-    parameters: list[Parameter]     # query params, path params
-    response_schema: dict[str, Any] # JSON schema of response
-    pagination: PaginationType | None
-
-class AuthRequirement:
-    """What auth the API needs."""
-    type: Literal["oauth2", "api_key", "basic", "bearer", "custom"]
-    tier: Literal["A", "B", "C"]    # complexity classification
-    oauth_config: OAuthConfig | None
-    docs_url: str | None            # where to get credentials
-
-class APISchema:
-    """Complete description of a discovered API."""
-    source_url: str
-    service_name: str               # "Shopify", "Stripe", etc.
-    discovery_method: Literal["mcp", "openapi", "graphql", "rest_heuristic", "browser"]
-    endpoints: list[Endpoint]
-    auth: AuthRequirement
-    rate_limits: RateLimits | None
-    discovered_at: datetime
-```
-
-### AdapterConfig
-
-```python
-class FieldMapping:
-    """Maps one external field to one domain field."""
-    source_path: str                # "orders[].total_price"
-    target_field: str               # "amount"
-    transform: str | None           # optional expression, e.g. "value * -1"
-    confidence: float               # 0.0-1.0, updated by human corrections
-
-class SyncConfig:
-    """How to sync data."""
-    endpoints: list[str]            # which endpoints to sync
-    schedule: str                   # cron expression: "0 */6 * * *"
-    cursor_field: str | None        # field for incremental sync
-    batch_size: int
-
-class AdapterConfig:
-    """Complete adapter — the artifact that Liquid produces."""
-    config_id: str
-    schema: APISchema
-    auth_ref: str                   # Vault key for credentials
-    mappings: list[FieldMapping]
-    sync: SyncConfig
-    verified_by: str | None         # human who approved
-    verified_at: datetime | None
-    version: int
-```
-
-### SyncResult
-
-```python
-class SyncResult:
-    """Result of a sync run."""
-    adapter_id: str
-    started_at: datetime
-    finished_at: datetime
-    records_fetched: int
-    records_mapped: int
-    records_delivered: int
-    errors: list[SyncError]
-    next_cursor: str | None
-```
-
----
-
-## Consumer Integration
-
-Liquid is a library, not a framework. The consumer controls:
-
-- **When** to trigger discovery (onboarding, user request, scheduled)
-- **How** to present mappings for human review (their UI, not Liquid's)
-- **Where** to store configs (Postgres, file system, whatever)
-- **What** to do with synced data (insert into DB, send to queue, etc.)
-
-### Extension Points
-
-**Vault** — credential storage:
-```python
-class Vault(Protocol):
-    async def store(self, key: str, value: str) -> None: ...
-    async def get(self, key: str) -> str: ...
-    async def delete(self, key: str) -> None: ...
-```
-
-**LLM Backend** — AI provider:
-```python
-class LLMBackend(Protocol):
-    async def chat(
-        self, messages: list[Message], tools: list[Tool] | None = None
-    ) -> LLMResponse: ...
-```
-
-**Data Sink** — where synced data goes:
-```python
-class DataSink(Protocol):
-    async def deliver(self, records: list[MappedRecord]) -> DeliveryResult: ...
-```
-
-**Community Knowledge** (optional) — shared mapping patterns:
-```python
-class KnowledgeStore(Protocol):
-    async def find_mapping(self, service: str, target_model: str) -> list[FieldMapping] | None: ...
-    async def store_mapping(self, service: str, target_model: str, mappings: list[FieldMapping]) -> None: ...
-```
-
----
-
-## Learning System
-
-Liquid gets smarter with usage. Two levels:
-
-### Local Learning (within one deployment)
-
-When a user corrects a mapping (e.g., "this field is not revenue, it's a refund"), the correction is stored. Next time the same API is connected by another user in the same deployment, the corrected mapping is proposed.
-
-### Community Learning (across deployments, opt-in)
-
-Mappings are anonymized: strip all user/company identifiers, keep only `(service, field_path) → (target_model, target_field)` pairs. These patterns can be shared via a `KnowledgeStore`:
-
-- A central registry (like the selfware Evolution Hub)
-- A local cache within an organization
-- Or completely disabled — zero sharing
-
-The consumer decides the sharing policy.
-
----
-
-## Error Handling & Re-Discovery
-
-APIs change. Liquid handles this explicitly:
-
-1. **Schema drift**: field renamed/removed → sync fails with `FieldNotFound`
-2. **Auth expired**: token revoked → sync fails with `AuthError`
-3. **Rate limit**: 429 response → backoff and retry with configurable strategy
-4. **Service down**: 5xx → retry with exponential backoff
-5. **Breaking change**: endpoint removed → sync fails with `EndpointGone`
-
-On persistent failure (configurable threshold), Liquid emits a `ReDiscoveryNeeded` event. The consumer can:
-- Trigger automatic re-discovery
-- Notify a human
-- Disable the adapter until manually reviewed
-
-### Automatic Adapter Repair
-
-When an API changes, `Liquid.repair_adapter()` handles the full repair flow in one call:
-
-```python
-result = await liquid.repair_adapter(
-    config=broken_config,
-    target_model=my_model,
-    auto_approve=True,           # auto-approve if confidence is high
-    confidence_threshold=0.8,
+await liquid.search(
+    adapter,
+    endpoint="/orders",
+    where={"status": "paid", "total_cents": {"$gt": 10_000}},
+    fields=["id", "total_cents"],
+    limit=50,
 )
 ```
 
-The flow:
-1. Re-discovers the API at the original URL
-2. Diffs old schema vs new schema (`SchemaDiff`)
-3. If no breaking changes → returns updated config (no re-mapping needed)
-4. If breaking changes → selectively re-maps only broken fields (preserves working mappings)
-5. Returns `AdapterConfig` (if auto-approved) or `MappingReview` (for human review)
+The DSL is a MongoDB-style subset: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$contains`, `$icontains`, `$startswith`, `$endswith`, `$regex`, `$exists`, `$and`, `$or`, `$not`. Liquid translates as much as possible into native API query params (via each endpoint's parameter metadata) and evaluates the remainder locally. Results always arrive filtered — the caller doesn't see un-matching records.
 
-For fully automated repair, use `AutoRepairHandler`:
+`Liquid.search_nl(adapter, endpoint, query="...")` calls the LLM to compile natural language into the same DSL, then executes `search`. Compilations are keyed on `(adapter, endpoint, query_text, schema_fingerprint)` and cached; the next identical NL query skips the LLM entirely.
+
+### Aggregation + text search
 
 ```python
-from liquid.sync import AutoRepairHandler
+rollup = await liquid.aggregate(
+    adapter,
+    endpoint="/orders",
+    group_by="status",
+    agg={"total_cents": "sum", "id": "count"},
+    filter={"created_at": {"$gte": "2026-01-01"}},
+    limit=10_000,   # scan cap
+)
+# {("status","paid"): {"total_cents_sum": 12345, "id_count": 42}, ...}
+```
 
-handler = AutoRepairHandler(
-    liquid=client,
-    target_model=my_model,
-    config_provider=lambda: current_config,
-    on_repair=my_callback,
-    auto_approve=True,
+Supported aggregates: `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `distinct`. The engine walks pages through the same paginator the runtime uses, applies the DSL filter, buckets, and returns scalars — the records never cross into the agent.
+
+```python
+hits = await liquid.text_search(
+    adapter,
+    endpoint="/customers",
+    query="acme corp enterprise",
+    fields=["name", "company", "notes"],
+    limit=10,
 )
 ```
 
----
+`text_search` runs a BM25-lite scorer across the specified string fields, emits the top-N with normalized scores in `[0, 1]` and the list of fields that matched.
 
-## Project Boundaries
+### Output normalization
 
-**Liquid IS**:
+`Liquid(normalize_output=True)` runs every response through `liquid.normalize.normalize_response`, which recursively:
+
+- Converts money-shaped dicts to `Money(amount_cents, currency, amount_decimal, original)` with ISO 4217 awareness (JPY uses whole units, BHD uses three decimals, etc.).
+- Parses timestamp-shaped fields to UTC `datetime`.
+- Wraps paginated shapes in `PaginationEnvelope(items, next_cursor, prev_cursor, has_more, total, page, per_page)`.
+- Stringifies IDs for consistent hashing / dictionary keys.
+
+The `from liquid.normalize import ...` helpers are available à la carte: `normalize_money`, `normalize_datetime`, `normalize_pagination`, `normalize_id`, `normalize_response`.
+
+### Intent layer
+
+Intents are canonical operations. An adapter opts in by providing an `IntentConfig` binding the canonical name (e.g. `charge_customer`) to an adapter-specific `action_id` + field mappings. Agents call:
+
+```python
+await liquid.execute_intent(
+    adapter,
+    intent_name="charge_customer",
+    data={"amount_cents": 9999, "currency": "USD", "customer_id": "..."},
+)
+```
+
+and the runtime translates into Stripe's `/charges`, Braintree's `/transactions/sale`, Adyen's `/payments`, etc. — identical call, identical response shape.
+
+Shipped intents: `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `send_email`, `post_message`, `create_ticket`, `close_ticket`, `list_orders`, `cancel_order`. `liquid.list_canonical_intents()` enumerates; `liquid.get_intent(name)` returns the canonical schema.
+
+### Structured recovery
+
+Every Liquid exception carries a `Recovery`:
+
+```python
+class Recovery(BaseModel):
+    hint: str
+    next_action: ToolCall | None          # {tool, args, description}
+    retry_safe: bool
+    retry_after_seconds: float | None
+```
+
+Agents can dispatch `recovery.next_action` through the same tool-calling machinery they already use — `repair_adapter`, `store_credentials`, `wait_and_retry`, etc. No prompt parsing, no regex on error strings.
+
+Typical flow:
+
+```
+AuthError.recovery.next_action = ToolCall(
+    tool="store_credentials",
+    args={"adapter_id": "shopify", "credentials": {...}},
+    description="Credentials expired. Re-auth the user."
+)
+```
+
+### Tool metadata + fetch estimation
+
+`to_tools(liquid, format="anthropic" | "openai" | "langchain" | "mcp")` returns the full agent tool list. Each per-endpoint tool carries a `metadata` block (keyed per provider: `metadata`, `x-metadata`, or `annotations` for MCP):
+
+```
+cost_credits            typical_latency_ms
+cached / cache_ttl_seconds
+idempotent / side_effects
+rate_limit_impact
+expected_result_size
+related_tools
+```
+
+Agents that reason about cost can read these without a round-trip. Opt out with `include_metadata=False`.
+
+Before a heavy fetch, ask for the cost:
+
+```python
+est: FetchEstimate = await liquid.estimate_fetch(adapter, endpoint="/orders")
+# expected_items, expected_bytes, expected_tokens, expected_cost_credits,
+# expected_latency_ms, confidence ("high"|"medium"|"low"),
+# source ("empirical"|"crowdsourced"|"openapi_declared"|"heuristic")
+```
+
+Confidence tracks where the estimate came from:
+- `high` — empirical measurements on this exact adapter
+- `medium` — OpenAPI-declared schemas
+- `low` — pure heuristics
+
+### Context-window controls
+
+Every fetch / execute takes three agent-facing knobs:
+
+- **`max_tokens=N`** — hard budget. Lists drop trailing items; dicts trim oversize string fields. When truncation happens, `_meta.truncated=True` and `_meta.truncated_at` records what was cut.
+- **`verbosity`** — `"terse"` keeps only identifying + primary fields; `"normal"` is passthrough; `"full"` signals intent to bypass future pruning; `"debug"` adds a `_debug` block with request URL, response headers, timing, cache hit, schema version.
+- **`cache=300 | "5m" | False | None`** — per-call TTL override or bypass.
+
+Two specialized iterators cover common "pull just what I need" patterns:
+
+```python
+# Paginate until condition matches (or caps hit)
+await liquid.fetch_until(
+    adapter,
+    endpoint="/orders",
+    predicate={"created_at": {"$lt": "2026-01-01"}},   # DSL or callable
+    max_pages=100,
+    max_records=10_000,
+)
+# FetchUntilResult(records, matched, matching_record,
+#                  pages_fetched, records_scanned,
+#                  stopped_reason="matched"|"exhausted"|"max_pages"|"max_records")
+
+# Diff since a cursor — uses native updated_since param when declared,
+# falls back to client-side filter on updated_at / modified_at / changed_at
+await liquid.fetch_changes_since(
+    adapter,
+    endpoint="/orders",
+    since="2026-04-10T00:00:00Z",
+    timestamp_field=None,   # auto-detect; override if ambiguous
+)
+# FetchChangesResult(changed_records, since, until,
+#                    detection_method="native_param"|"client_filter",
+#                    timestamp_field, pages_fetched)
+```
+
+### State query tools
+
+`to_tools(liquid)` includes ambient state tools the agent can call any time without tying them to a particular adapter:
+
+- `liquid_check_quota` — remaining rate-limit budget for an adapter / endpoint
+- `liquid_check_rate_limit` — current policy + seen headers
+- `liquid_list_adapters` — every registered adapter in the registry
+- `liquid_get_adapter_info` — schema summary + intent bindings
+- `liquid_health_check` — liveness probe that exercises a cheap endpoint
+- `liquid_estimate_fetch` — see above
+
+These let the agent answer "can I make this call right now?" before committing to it.
+
+### Response `_meta` block
+
+`Liquid(include_meta=True)` (or per-call `include_meta=True`) wraps responses so agents can reason about provenance without another call:
+
+```python
+{
+  "data": [...],
+  "_meta": {
+    "source": "live" | "cache" | "retry",
+    "age_seconds": 0,
+    "fresh": True,
+    "truncated": False,
+    "truncated_at": None,
+    "total_count": 1247,
+    "next_cursor": "eyJp...",
+    "adapter": "shopify",
+    "endpoint": "/orders",
+    "fetched_at": "2026-04-17T12:34:56Z",
+    "confidence": 1.0,
+  }
+}
+```
+
+Confidence decays linearly with cache age, caps at 0.9 for retried responses, and is 1.0 for live calls.
+
+## Protocols
+
+Six `Protocol`-based extension points are wired into the `Liquid` constructor:
+
+```python
+Liquid(
+    llm: LLMBackend,            # async chat(messages, tools) -> LLMResponse
+    vault: Vault,               # async store/get/delete(key)
+    sink: DataSink,             # async deliver(records) -> DeliveryResult
+    knowledge: KnowledgeStore | None = None,
+    registry: AdapterRegistry | None = None,
+    cache: CacheStore | None = None,
+    rate_limiter: RateLimiter | None = None,
+    event_handler: EventHandler | None = None,
+    http_client: httpx.AsyncClient | None = None,
+    retry_policy: RetryPolicy | None = None,
+    contribute_telemetry: bool = False,
+    normalize_output: bool = False,
+    include_meta: bool = False,
+)
+```
+
+In-memory defaults ship for every protocol: `InMemoryVault`, `InMemoryKnowledgeStore`, `InMemoryAdapterRegistry`, `InMemoryCache`, `CollectorSink`, `StdoutSink`. Swap any of them for a production implementation without touching the rest — see `EXTENDING.md` for Postgres / Redis / file-backed recipes.
+
+## Adapter lifecycle
+
+An `AdapterConfig` moves through states:
+
+```
+┌────────────┐    ┌────────┐    ┌──────────┐    ┌────────┐    ┌────────┐
+│ Discovered │───>│ Mapped │───>│ Verified │───>│ Drifted│───>│Repaired│
+└────────────┘    └────────┘    └──────────┘    └────────┘    └────────┘
+                                    │
+                                    v
+                                 (in use)
+```
+
+- **Discovered** — `APISchema` produced, auth classified, no mappings yet.
+- **Mapped** — `FieldMapping` list attached, not yet approved.
+- **Verified** — `verified_by` set. Reads are enabled for any mapping; writes are **only** dispatched when the matching `ActionConfig.verified_by` is set. Unverified actions are silently skipped by `to_tools()` and raise `ActionNotVerifiedError` from `execute()`.
+- **Drifted** — `SyncRuntimeError` raised from the runtime (`FieldNotFoundError`, `EndpointGoneError`, etc.). Emits a `ReDiscoveryNeeded` event when configured.
+- **Repaired** — `Liquid.repair_adapter(config, target_model, auto_approve=True)` re-discovers the source URL, diffs old vs new schema, preserves working mappings, re-maps only fields whose sources are gone, and returns either an updated `AdapterConfig` (auto-approved) or a `MappingReview` (human needed). For fully automated repair, `liquid.sync.AutoRepairHandler` plugs into `SyncEngine` as an event handler.
+
+Action mappings are repaired alongside field mappings during `repair_adapter` — no separate flow.
+
+## Optional cloud service
+
+The library works fully standalone. An optional cloud service (hosted at `https://liquid.ertad.family/v1/...`) provides three opt-in amplifiers:
+
+- **Global adapter catalog** — shared, anonymized (service, field_path) → (target_model, target_field) mappings. User 51 connecting Shopify with a standard target model gets instant, high-confidence proposals from the aggregate of users 1..50.
+- **Empirical probing** — crowdsourced stats on endpoint size distributions feed `FetchEstimate.source="empirical"` with `confidence="high"`.
+- **Telemetry aggregation** — `Liquid(contribute_telemetry=True, telemetry_endpoint=...)` sends anonymized runtime observations (latency buckets, rate-limit behavior, status-code distributions) to refine the catalog.
+
+All three are off by default. Self-hosted deployments can run the same catalog + telemetry stack locally by implementing `KnowledgeStore` and `AdapterRegistry` against their own storage.
+
+## Project boundaries
+
+**Liquid IS:**
 - A Python library for API discovery and adapter generation
-- A sync engine that runs without AI
-- A set of protocols (Vault, LLM, DataSink) for consumer integration
-- LLM-agnostic, storage-agnostic, platform-agnostic
+- A deterministic runtime that runs without an LLM per call
+- A set of protocols — LLM-agnostic, storage-agnostic, platform-agnostic
+- An agent UX layer — DSL, aggregates, intents, normalization, recovery, metadata
 
-**Liquid IS NOT**:
+**Liquid IS NOT:**
 - A rule engine (consumers build domain rules themselves)
-- A schema generator (consumers generate schemas for their domain)
-- A UI framework (consumers build their own views)
-- An agent framework (that's selfware)
-- A hosted service (consumers self-host)
-- Opinionated about domain (accounting, DevOps, CRM — all consumers)
+- A schema generator (consumers model their own domain)
+- A UI framework (consumers present mapping reviews however they like)
+- An agent framework (use LangChain / Anthropic SDK / your own loop)
+- A hosted service (self-host; the cloud amplifiers are strictly opt-in)
+- Opinionated about domain (works for fintech, DevOps, CRM, support — same shape)
