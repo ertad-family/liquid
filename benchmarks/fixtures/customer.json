@@ -1,0 +1,85 @@
+{
+  "id": "cus_00042",
+  "email": "alice@example.com",
+  "first_name": "Alice",
+  "last_name": "Anderson",
+  "phone": "+1-555-0100",
+  "company": "Acme Corp",
+  "job_title": "Engineering Lead",
+  "created_at": "2023-01-15T09:30:00Z",
+  "updated_at": "2025-03-20T14:22:00Z",
+  "last_login_at": "2025-03-19T22:15:00Z",
+  "tier": "gold",
+  "lifetime_value_cents": 482300,
+  "total_orders": 47,
+  "avg_order_cents": 10262,
+  "default_payment_method_id": "pm_0001",
+  "default_shipping_address_id": "addr_0001",
+  "marketing_consent": true,
+  "sms_consent": false,
+  "locale": "en-US",
+  "timezone": "America/Los_Angeles",
+  "currency": "USD",
+  "tax_exempt": false,
+  "tax_id": null,
+  "notes": "VIP \u2014 route to dedicated support queue.",
+  "tags": [
+    "vip",
+    "repeat_customer",
+    "beta_tester"
+  ],
+  "billing_address": {
+    "line1": "123 Main St",
+    "line2": "Suite 4B",
+    "city": "Portland",
+    "state": "OR",
+    "zip": "97204",
+    "country": "US"
+  },
+  "shipping_address": {
+    "line1": "123 Main St",
+    "line2": "Suite 4B",
+    "city": "Portland",
+    "state": "OR",
+    "zip": "97204",
+    "country": "US"
+  },
+  "preferences": {
+    "newsletter_frequency": "weekly",
+    "product_categories": [
+      "electronics",
+      "books",
+      "home"
+    ],
+    "preferred_channels": [
+      "email",
+      "push"
+    ],
+    "theme": "dark",
+    "language": "en"
+  },
+  "metadata": {
+    "referral_source": "partner-campaign-Q4-2023",
+    "acquisition_channel": "google-ads",
+    "first_purchase_date": "2023-01-16",
+    "support_tier": "priority",
+    "custom_fields": {
+      "favorite_product_sku": "SKU-4711",
+      "birthday": "1985-04-22",
+      "anniversary": "2023-01-15"
+    }
+  },
+  "external_ids": {
+    "stripe_id": "cus_stripe_42",
+    "hubspot_id": "hs_1337",
+    "segment_id": "seg_00042"
+  },
+  "integrations": [
+    "stripe",
+    "hubspot",
+    "intercom"
+  ],
+  "account_status": "active",
+  "risk_score": 0.12,
+  "fraud_review_required": false
+}

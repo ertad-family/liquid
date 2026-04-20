@@ -1,0 +1,15 @@
+{
+  "id": "ch_3OXYZ1234567890",
+  "object": "charge",
+  "amount": 9999,
+  "currency": "usd",
+  "status": "succeeded",
+  "created": 1742480000,
+  "description": "Test charge",
+  "customer": "cus_00042",
+  "payment_method": "pm_card_visa",
+  "receipt_url": "https://pay.stripe.com/receipts/3OXYZ",
+  "paid": true,
+  "captured": true,
+  "livemode": false
+}
