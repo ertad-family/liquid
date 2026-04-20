@@ -39,3 +39,4 @@ Thumbs.db
 .env.*
 !.env.example
 .local/
+.mcp.json
