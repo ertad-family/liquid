@@ -116,6 +116,7 @@ async def _walk_pages(
         )
 
         cursor: str | None = None
+        extra_params = dict(params) if params else None
         # Cap the page-walk so a misconfigured pagination strategy that always
         # returns a non-None cursor can't spin forever. Callers further bound
         # this via the record-level ``limit`` argument.
@@ -125,6 +126,7 @@ async def _walk_pages(
                 base_url=config.schema_.source_url,
                 auth_ref=config.auth_ref,
                 cursor=cursor,
+                extra_params=extra_params,
             )
             mapped = mapper.map_batch(result.records, endpoint_path)
             yield [r.mapped_data for r in mapped]

@@ -16,7 +16,7 @@ from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
-from liquid.exceptions import ActionNotVerifiedError
+from liquid.exceptions import ActionNotVerifiedError, LiquidError, Recovery
 from liquid.mapping.learning import MappingLearner
 from liquid.mapping.proposer import MappingProposer
 from liquid.mapping.reviewer import MappingReview
@@ -29,19 +29,23 @@ from liquid.sync.mapper import RecordMapper
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from datetime import datetime
 
     from liquid.action.batch import BatchResult
     from liquid.action.reviewer import ActionReview
+    from liquid.diff_sync import FetchChangesResult
     from liquid.estimate import FetchEstimate
     from liquid.events import EventHandler
-    from liquid.models.response import FetchResponse
+    from liquid.models.response import FetchResponse, FetchUntilResult, SearchNLResult
     from liquid.models.schema import Endpoint
     from liquid.models.sync import SyncResult
     from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
+    from liquid.query.nl import NLCompilationCache
     from liquid.sync.quota import QuotaInfo
     from liquid.sync.rate_limiter import RateLimiter
     from liquid.sync.retry import RetryPolicy
     from liquid.telemetry import TelemetryCollector
+    from liquid.verbosity import VerbosityLevel
 
 
 class Liquid:
@@ -342,6 +346,7 @@ class Liquid:
         *,
         max_tokens: int | None = None,
         include_meta: bool | None = None,
+        verbosity: VerbosityLevel = "normal",
     ) -> list[dict[str, Any]] | dict[str, Any]:
         """Fetch data through an adapter — the primary way agents get data.
 
@@ -362,7 +367,14 @@ class Liquid:
         - include_meta: when True, wrap the response as
           ``{"data": [...], "_meta": {...}}`` with source/freshness/truncation
           info. Defaults to the value set on the :class:`Liquid` instance.
+        - verbosity: shape the response for the caller's context budget:
+          ``"terse"`` (id + 1-2 primary fields), ``"normal"`` (default),
+          ``"full"`` (bypass future normalization), ``"debug"`` (full + a
+          ``_debug`` block with request URL, response headers, timing,
+          cache hit, schema version).
         """
+        import time as _time
+
         from liquid.cache.ttl import parse_ttl
         from liquid.discovery.utils import managed_http_client
 
@@ -385,6 +397,7 @@ class Liquid:
         elif isinstance(cache, str):
             cache_ttl_override[ep_path] = parse_ttl(cache)
 
+        t0 = _time.perf_counter()
         async with managed_http_client(self._http_client) as client:
             fetcher = Fetcher(
                 http_client=client,
@@ -400,10 +413,13 @@ class Liquid:
                 base_url=config.schema_.source_url,
                 auth_ref=config.auth_ref,
             )
+            timing_ms = int((_time.perf_counter() - t0) * 1000)
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
             records: list[dict[str, Any]] = [r.mapped_data for r in mapped]
-            if self.normalize_output:
+            # ``full`` explicitly bypasses normalization; ``normal`` keeps
+            # current behaviour (opt-in flag).
+            if self.normalize_output and verbosity != "full":
                 records = [self._maybe_normalize(r) for r in records]
 
             # Truncate to fit max_tokens, if requested.
@@ -417,6 +433,14 @@ class Liquid:
                 truncated = trunc.truncated
                 truncated_at = trunc.truncated_at
 
+            # Apply verbosity shaping before meta wrapping so the _meta
+            # block (if requested) reports the post-shaping record count.
+            payload: Any = records
+            if verbosity == "terse":
+                from liquid.verbosity import apply_verbosity
+
+                payload = apply_verbosity(records, "terse")
+
             effective_meta = self.include_meta if include_meta is None else include_meta
             if effective_meta:
                 from liquid.meta import build_meta, wrap_with_meta
@@ -427,11 +451,33 @@ class Liquid:
                     endpoint=ep_path,
                     truncated=truncated,
                     truncated_at=truncated_at,
-                    returned_items=len(records),
+                    returned_items=len(payload) if isinstance(payload, list) else None,
                 )
-                return wrap_with_meta(records, meta)
+                payload = wrap_with_meta(payload, meta)
 
-            return records
+            if verbosity == "debug":
+                from liquid.verbosity import apply_verbosity
+
+                raw_response = getattr(result, "raw_response", None)
+                response_headers: dict[str, str] = {}
+                request_url: str | None = None
+                from_cache = False
+                if raw_response is not None:
+                    response_headers = dict(raw_response.headers) if getattr(raw_response, "headers", None) else {}
+                    request_obj = getattr(raw_response, "request", None)
+                    request_url = str(request_obj.url) if request_obj is not None else None
+                else:
+                    from_cache = cache_store is not None
+                debug_info: dict[str, Any] = {
+                    "request_url": request_url,
+                    "response_headers": response_headers,
+                    "timing_ms": timing_ms,
+                    "from_cache": from_cache,
+                    "schema_version": config.version,
+                }
+                payload = apply_verbosity(payload, "debug", debug_info=debug_info)
+
+            return payload
 
     async def fetch_with_meta(
         self,
@@ -558,20 +604,263 @@ class Liquid:
 
     async def search_nl(
         self,
-        config: AdapterConfig,
+        adapter: str | AdapterConfig,
         endpoint: str | None = None,
         query: str = "",
         *,
-        limit: int | None = 20,
+        limit: int = 50,
         fields: list[str] | None = None,
-    ) -> FetchResponse:
-        """Natural language search. LLM translates query -> DSL -> executes."""
-        if not self.llm:
-            msg = "search_nl requires llm= on Liquid()"
+        params: dict[str, Any] | None = None,
+        cache: NLCompilationCache | None = None,
+    ) -> SearchNLResult:
+        """Natural-language search. LLM translates query -> DSL -> executes.
+
+        Compilation results are cached per (adapter, endpoint, query text,
+        schema fingerprint). Repeat calls skip the LLM and go straight to
+        :meth:`search`. Raises :class:`~liquid.exceptions.LiquidError` when
+        no LLM is configured, and :class:`~liquid.query.nl.NLCompileError`
+        when the LLM output can't be parsed as query DSL.
+        """
+        from liquid.models.response import SearchNLResult as _SearchNLResult
+        from liquid.query.nl import compile_nl_to_dsl
+
+        if self.llm is None:
+            raise LiquidError(
+                "search_nl requires an LLM provider; configure Liquid(llm=...)",
+                recovery=Recovery(
+                    hint="Pass an llm= argument when constructing Liquid.",
+                    retry_safe=False,
+                ),
+            )
+
+        config = await self._resolve_adapter(adapter)
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+
+        # Assemble the schema field list so the cache key reflects the
+        # response shape — different schemas yield different compilations.
+        schema_fields: list[str] = []
+        if target_ep is not None and target_ep.response_schema:
+            props = target_ep.response_schema.get("properties", {})
+            if target_ep.response_schema.get("type") == "array":
+                items = target_ep.response_schema.get("items", {})
+                props = items.get("properties", {}) if isinstance(items, dict) else {}
+            if isinstance(props, dict):
+                schema_fields = list(props.keys())
+        # Fall back to the adapter's mapped target fields — every adapter has
+        # these even when the response schema is sparse.
+        if not schema_fields:
+            schema_fields = [m.target_field for m in config.mappings]
+
+        compiled, from_cache = await compile_nl_to_dsl(
+            llm=self.llm,
+            adapter_id=config.config_id,
+            endpoint=ep_path,
+            query=query,
+            fields=schema_fields,
+            cache=cache,
+        )
+
+        search_resp = await self.search(
+            config,
+            ep_path,
+            where=compiled,
+            limit=limit,
+            fields=fields,
+        )
+        _ = params  # reserved for future native-param push-down
+
+        llm_provider = type(self.llm).__name__ if self.llm is not None else None
+        # ``pages_fetched`` here reports "at least 1" — :meth:`search` does
+        # not yet surface a page count from the walker; keep this forward
+        # compatible so the field is meaningful.
+        return _SearchNLResult(
+            records=list(search_resp.items),
+            compiled_query=compiled,
+            query_text=query,
+            llm_provider=llm_provider,
+            from_cache=from_cache,
+            pages_fetched=1,
+        )
+
+    async def fetch_until(
+        self,
+        adapter: str | AdapterConfig,
+        endpoint: str | None = None,
+        predicate: Any = None,
+        *,
+        max_pages: int = 100,
+        max_records: int = 10_000,
+        params: dict[str, Any] | None = None,
+    ) -> FetchUntilResult:
+        """Auto-paginate until ``predicate`` matches, or limits are hit.
+
+        ``predicate`` can be a Python callable (``lambda o: o["date"] <
+        "2026-01-01"``) or a query DSL dict (``{"total_cents": {"$gt":
+        10_000}}``) that is evaluated per-record. Returns a
+        :class:`~liquid.models.response.FetchUntilResult` bundling the
+        records seen so far, whether a match was found, and the termination
+        reason.
+        """
+        from liquid.models.response import FetchUntilResult as _FetchUntilResult
+        from liquid.query._paginator import _walk_pages
+        from liquid.query.dsl import validate_query
+        from liquid.query.engine import _matches
+
+        if predicate is None:
+            raise ValueError("fetch_until requires a predicate (callable or DSL dict)")
+
+        config = await self._resolve_adapter(adapter)
+        ep_path = endpoint or config.sync.endpoints[0]
+
+        # Normalise the predicate into a per-record callable. DSL path uses
+        # the same matcher as :func:`apply_query` — re-validate up front so
+        # agents see a clear error before we walk any pages.
+        if callable(predicate):
+            test = predicate
+        elif isinstance(predicate, dict):
+            validate_query(predicate)
+            dsl_query = predicate
+
+            def test(record: dict[str, Any]) -> bool:
+                return _matches(record, dsl_query)
+        else:
+            raise TypeError(
+                f"predicate must be callable or dict, got {type(predicate).__name__}",
+            )
+
+        all_records: list[dict[str, Any]] = []
+        matching_record: dict[str, Any] | None = None
+        pages_fetched = 0
+        records_scanned = 0
+        stopped_reason: str = "exhausted"
+
+        async for page in _walk_pages(self, config, ep_path, params=params):
+            pages_fetched += 1
+            for record in page:
+                records_scanned += 1
+                all_records.append(record)
+                if test(record):
+                    matching_record = record
+                    stopped_reason = "matched"
+                    break
+                if records_scanned >= max_records:
+                    stopped_reason = "max_records"
+                    break
+            if matching_record is not None or stopped_reason in ("max_records",):
+                break
+            if pages_fetched >= max_pages:
+                stopped_reason = "max_pages"
+                break
+
+        return _FetchUntilResult(
+            records=all_records,
+            matched=matching_record is not None,
+            matching_record=matching_record,
+            pages_fetched=pages_fetched,
+            records_scanned=records_scanned,
+            stopped_reason=stopped_reason,  # type: ignore[arg-type]
+        )
+
+    async def fetch_changes_since(
+        self,
+        adapter: str | AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        since: str | datetime,
+        timestamp_field: str | None = None,
+        params: dict[str, Any] | None = None,
+        max_pages: int = 100,
+    ) -> FetchChangesResult:
+        """Return records changed since ``since``.
+
+        When the endpoint declares a parameter like ``updated_since`` /
+        ``modified_since`` / ``since``, it's injected into the request and
+        we let the API do the filtering. Otherwise we walk every page and
+        filter client-side on a timestamp field (``updated_at`` /
+        ``modified_at`` / …; override with ``timestamp_field=``).
+
+        Raises a :class:`ValueError` when the client-filter fallback fires
+        and no timestamp field can be found on the returned records — the
+        agent should inspect the adapter's response_schema and pass
+        ``timestamp_field=`` explicitly.
+        """
+        from datetime import UTC
+        from datetime import datetime as _datetime
+
+        from liquid.diff_sync import (
+            FetchChangesResult as _FetchChangesResult,
+        )
+        from liquid.diff_sync import (
+            coerce_since,
+            detect_native_param,
+            detect_timestamp_field,
+            filter_since,
+        )
+        from liquid.query._paginator import _walk_pages
+
+        config = await self._resolve_adapter(adapter)
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+        if target_ep is None:
+            msg = f"Endpoint {ep_path} not found in adapter schema"
             raise ValueError(msg)
 
-        dsl = await self._nl_to_dsl(config, endpoint, query)
-        return await self.search(config, endpoint, where=dsl, limit=limit, fields=fields)
+        since_dt = coerce_since(since)
+        until_dt = _datetime.now(UTC)
+
+        native_param = detect_native_param(target_ep)
+        merged_params: dict[str, Any] = dict(params or {})
+
+        pages_fetched = 0
+        changed: list[dict[str, Any]] = []
+
+        if native_param is not None:
+            # Native param path: inject and trust the server.
+            merged_params[native_param] = since_dt.isoformat()
+            async for page in _walk_pages(self, config, ep_path, params=merged_params):
+                pages_fetched += 1
+                changed.extend(page)
+                if pages_fetched >= max_pages:
+                    break
+            return _FetchChangesResult(
+                changed_records=changed,
+                since=since_dt,
+                until=until_dt,
+                detection_method="native_param",
+                timestamp_field=native_param,
+                pages_fetched=pages_fetched,
+            )
+
+        # Client-filter path: collect and filter locally.
+        detected_field = timestamp_field
+        collected: list[dict[str, Any]] = []
+        async for page in _walk_pages(self, config, ep_path, params=merged_params):
+            pages_fetched += 1
+            collected.extend(page)
+            if detected_field is None:
+                detected_field = detect_timestamp_field(page)
+            if pages_fetched >= max_pages:
+                break
+
+        if detected_field is None and collected:
+            raise ValueError(
+                f"Could not detect a timestamp field on {ep_path} records "
+                f"(tried: updated_at, modified_at, changed_at, last_modified). "
+                "Pass timestamp_field= explicitly."
+            )
+
+        if detected_field is not None:
+            changed = filter_since(collected, since_dt, detected_field)
+
+        return _FetchChangesResult(
+            changed_records=changed,
+            since=since_dt,
+            until=until_dt,
+            detection_method="client_filter",
+            timestamp_field=detected_field,
+            pages_fetched=pages_fetched,
+        )
 
     async def aggregate(
         self,
@@ -848,6 +1137,7 @@ class Liquid:
         *,
         max_tokens: int | None = None,
         include_meta: bool | None = None,
+        verbosity: VerbosityLevel = "normal",
     ) -> ActionResult:
         """Execute a write action by action_id.
 
@@ -862,6 +1152,9 @@ class Liquid:
         - include_meta: wrap the ``response_body`` in ``{"data": ..., "_meta": ...}``
           so agents see the source/freshness/truncation. Defaults to the
           instance-level ``Liquid.include_meta`` flag.
+        - verbosity: shape ``response_body`` for the caller's context
+          budget — ``"terse"``, ``"normal"`` (default), ``"full"``, or
+          ``"debug"``. Matches the semantics of :meth:`fetch`.
         """
         action = next((a for a in config.actions if a.action_id == action_id), None)
         if action is None:

@@ -289,6 +289,10 @@ class TestToolsExposure:
         names = [t["name"] for t in tools]
         assert "liquid_aggregate" in names
         assert "liquid_text_search" in names
+        # 0.17.0 additions — fetch_until / fetch_changes_since / search_nl
+        assert "liquid_fetch_until" in names
+        assert "liquid_fetch_changes_since" in names
+        assert "liquid_search_nl" in names
 
     def test_query_tools_not_included_when_state_tools_disabled(self) -> None:
         from liquid.agent_tools import to_tools
@@ -300,3 +304,6 @@ class TestToolsExposure:
         names = [t["name"] for t in tools]
         assert "liquid_aggregate" not in names
         assert "liquid_text_search" not in names
+        assert "liquid_fetch_until" not in names
+        assert "liquid_fetch_changes_since" not in names
+        assert "liquid_search_nl" not in names

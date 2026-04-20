@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 __all__ = [
     "QUERY_TOOL_DEFINITIONS",
     "aggregate",
+    "fetch_changes_since",
+    "fetch_until",
+    "search_nl",
     "text_search",
 ]
 
@@ -65,6 +68,76 @@ async def text_search(
         scan_limit=scan_limit,
         params=params,
     )
+
+
+async def fetch_until(
+    liquid: Liquid,
+    adapter: str,
+    endpoint: str | None = None,
+    predicate: Any = None,
+    *,
+    max_pages: int = 100,
+    max_records: int = 10_000,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Thin async wrapper around :meth:`Liquid.fetch_until`.
+
+    Returns the :class:`~liquid.models.response.FetchUntilResult` as a plain
+    dict so LLM providers that don't speak pydantic can still parse it.
+    """
+    result = await liquid.fetch_until(
+        adapter,
+        endpoint,
+        predicate,
+        max_pages=max_pages,
+        max_records=max_records,
+        params=params,
+    )
+    return result.model_dump()
+
+
+async def fetch_changes_since(
+    liquid: Liquid,
+    adapter: str,
+    endpoint: str | None = None,
+    *,
+    since: str,
+    timestamp_field: str | None = None,
+    params: dict[str, Any] | None = None,
+    max_pages: int = 100,
+) -> dict[str, Any]:
+    """Thin async wrapper around :meth:`Liquid.fetch_changes_since`."""
+    result = await liquid.fetch_changes_since(
+        adapter,
+        endpoint,
+        since=since,
+        timestamp_field=timestamp_field,
+        params=params,
+        max_pages=max_pages,
+    )
+    return result.model_dump(mode="json")
+
+
+async def search_nl(
+    liquid: Liquid,
+    adapter: str,
+    endpoint: str | None = None,
+    query: str = "",
+    *,
+    fields: list[str] | None = None,
+    limit: int = 50,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Thin async wrapper around :meth:`Liquid.search_nl`."""
+    result = await liquid.search_nl(
+        adapter,
+        endpoint,
+        query,
+        fields=fields,
+        limit=limit,
+        params=params,
+    )
+    return result.model_dump()
 
 
 QUERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
@@ -151,6 +224,123 @@ QUERY_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "limit": {
                     "type": "integer",
                     "description": "Max number of results to return. Default 50.",
+                },
+            },
+            "required": ["adapter", "query"],
+        },
+    },
+    {
+        "name": "liquid_fetch_until",
+        "description": (
+            "Auto-paginate an endpoint until a matching record is found, or stop early "
+            "after max_pages / max_records. Supply predicate either as a JSON-encoded "
+            'Liquid query DSL dict (MongoDB-style: {"total_cents": {"$gt": 10000}}) '
+            "or — from Python — as a callable. Returns "
+            "{records, matched, matching_record, pages_fetched, records_scanned, "
+            "stopped_reason}. Ideal when the agent knows 'stop condition' but not "
+            "'how many pages' ahead of time."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "adapter": {
+                    "type": "string",
+                    "description": "Adapter / service name (e.g. 'stripe').",
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Endpoint path. Defaults to the first sync endpoint.",
+                },
+                "predicate": {
+                    "type": "object",
+                    "description": (
+                        'Liquid query DSL dict evaluated per-record. Example: {"total_cents": {"$gt": 10000}}.'
+                    ),
+                },
+                "max_pages": {
+                    "type": "integer",
+                    "description": "Cap on pages to walk. Default 100.",
+                },
+                "max_records": {
+                    "type": "integer",
+                    "description": "Cap on records to scan. Default 10,000.",
+                },
+            },
+            "required": ["adapter", "predicate"],
+        },
+    },
+    {
+        "name": "liquid_fetch_changes_since",
+        "description": (
+            "Return ONLY records changed since a cursor — diff mode for state-sync. "
+            "Detects whether the endpoint supports a native 'since'/'updated_since' "
+            "parameter and pushes the filter to the API; otherwise walks pages and "
+            "filters client-side against a timestamp field. Returns "
+            "{changed_records, since, until, detection_method, timestamp_field, "
+            "pages_fetched}. Use 'until' as the cursor for the next call."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "adapter": {
+                    "type": "string",
+                    "description": "Adapter / service name.",
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Endpoint path. Defaults to the first sync endpoint.",
+                },
+                "since": {
+                    "type": "string",
+                    "description": "ISO 8601 cursor ('2026-01-01T00:00:00Z' or with +offset).",
+                },
+                "timestamp_field": {
+                    "type": "string",
+                    "description": (
+                        "Override auto-detected field. Useful when the API names its "
+                        "timestamp something other than updated_at/modified_at/…"
+                    ),
+                },
+                "max_pages": {
+                    "type": "integer",
+                    "description": "Cap on pages to walk when client-filtering. Default 100.",
+                },
+            },
+            "required": ["adapter", "since"],
+        },
+    },
+    {
+        "name": "liquid_search_nl",
+        "description": (
+            "Natural-language search. Type 'orders over $100 from last week' — Liquid "
+            "compiles it to a query DSL via LLM, caches the compilation, and executes "
+            "against the existing search pipeline. Returns "
+            "{records, compiled_query, query_text, llm_provider, from_cache, pages_fetched}. "
+            "Requires Liquid(llm=...); cached compilations skip the LLM entirely."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "adapter": {
+                    "type": "string",
+                    "description": "Adapter / service name.",
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Endpoint path. Defaults to the first sync endpoint.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Natural-language query (e.g. 'paid orders over $100').",
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional projection list — only these fields are kept on records.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results. Default 50.",
                 },
             },
             "required": ["adapter", "query"],

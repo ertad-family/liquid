@@ -113,7 +113,10 @@ class TestSearch:
         liquid, client = await _make_liquid(records)
         try:
             resp = await liquid.search_nl(adapter, query="paid orders")
-            assert resp.meta.returned_items == 1
-            assert resp.items[0]["id"] == 1
+            assert len(resp.records) == 1
+            assert resp.records[0]["id"] == 1
+            assert resp.compiled_query == {"status": "paid"}
+            assert resp.query_text == "paid orders"
+            assert resp.from_cache is False
         finally:
             await client.aclose()

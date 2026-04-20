@@ -17,7 +17,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from liquid.agent_tools.query import QUERY_TOOL_DEFINITIONS, aggregate, text_search
+from liquid.agent_tools.query import (
+    QUERY_TOOL_DEFINITIONS,
+    aggregate,
+    fetch_changes_since,
+    fetch_until,
+    search_nl,
+    text_search,
+)
 from liquid.agent_tools.state import (
     STATE_TOOL_DEFINITIONS,
     check_quota,
@@ -40,9 +47,12 @@ __all__ = [
     "check_quota",
     "check_rate_limit",
     "estimate_fetch",
+    "fetch_changes_since",
+    "fetch_until",
     "get_adapter_info",
     "health_check",
     "list_adapters",
+    "search_nl",
     "text_search",
     "to_tools",
 ]

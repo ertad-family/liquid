@@ -2,6 +2,77 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.17.0] - 2026-04-17
+
+### Added (agent-convenience: verbosity, predicate pagination, diff sync, NL search)
+
+- **Verbosity levels on `fetch` / `execute`** — new
+  `verbosity: "terse" | "normal" | "full" | "debug"` kwarg (default
+  `"normal"`, backward-compatible). `terse` trims records to the identity
+  field plus up to two informative fields (primary hints / first scalars),
+  shrinking payloads aggressively for context-constrained agents.
+  `normal` is passthrough (current behaviour). `full` signals "give me
+  everything" and bypasses output normalization. `debug` wraps the
+  response with a `_debug` block carrying `request_url`,
+  `response_headers`, `timing_ms`, `from_cache`, and `schema_version`.
+- **`Liquid.fetch_until(adapter, endpoint, predicate, *, max_pages, max_records, params)`**
+  — auto-paginates until a predicate matches, pagination is exhausted, or
+  caps are hit. Predicate can be a Python callable or a Liquid query DSL
+  dict (reuses the 0.10.0 DSL evaluator). Returns a `FetchUntilResult`
+  with `records`, `matched`, `matching_record`, `pages_fetched`,
+  `records_scanned`, and `stopped_reason` (`matched | exhausted |
+  max_pages | max_records`).
+- **`Liquid.fetch_changes_since(adapter, endpoint, *, since, timestamp_field, params, max_pages)`**
+  — incremental diff-sync. Auto-detects native `updated_since` /
+  `modified_since` / `since` / `after` / `from` parameters on the
+  endpoint and pushes the filter to the API; otherwise walks pages and
+  filters client-side against a timestamp field (auto-detected from
+  `updated_at` / `modified_at` / `changed_at` / `last_modified`, or
+  override via `timestamp_field=`). Returns a `FetchChangesResult` with
+  `changed_records`, `since`, `until` (cursor for the next call),
+  `detection_method`, `timestamp_field`, and `pages_fetched`.
+- **`Liquid.search_nl(adapter, endpoint, query, *, limit, fields, params, cache)`**
+  — natural-language search. LLM compiles the query to Liquid DSL and
+  executes via the existing `search()` pipeline. Compilations are cached
+  by (adapter, endpoint, query text, schema fingerprint) in a 1000-entry
+  LRU with 1-week TTL so repeat calls skip the LLM. Returns a
+  `SearchNLResult` with `records`, `compiled_query`, `query_text`,
+  `llm_provider`, `from_cache`, and `pages_fetched`. Raises
+  `LiquidError` when no LLM is configured, `NLCompileError` when the LLM
+  output isn't valid JSON.
+- **Agent tool exposure** — `liquid_fetch_until`,
+  `liquid_fetch_changes_since`, and `liquid_search_nl` join the state /
+  query tool cluster so `to_tools()` auto-includes them. Matching async
+  helpers live in `liquid.agent_tools`
+  (`fetch_until`, `fetch_changes_since`, `search_nl`).
+
+### Added modules
+
+- `liquid.verbosity` — `VerbosityLevel`, `apply_verbosity`,
+  `terse_record`, and the `IDENTITY_FIELDS` constant.
+- `liquid.diff_sync` — `FetchChangesResult`, `coerce_since`,
+  `detect_native_param`, `detect_timestamp_field`, `filter_since`, plus
+  `CANDIDATE_NATIVE_PARAMS` / `CANDIDATE_TIMESTAMP_FIELDS`.
+- `liquid.query.nl` — `NLCompilationCache`, `NLCompileError`,
+  `build_prompt`, `build_cache_key`, `compile_nl_to_dsl`,
+  `extract_dsl_from_text`, `schema_fingerprint`.
+
+### Changed
+
+- `liquid.sync.fetcher.Fetcher.fetch(...)` now accepts an optional
+  `extra_params` kwarg (merged into the request query string after
+  pagination params). Internal plumbing — public callers of `fetch()` on
+  `Liquid` are unchanged.
+- `liquid.query._paginator._walk_pages(...)` forwards its `params` kwarg
+  into the underlying fetcher as `extra_params`. Previously `params=` was
+  reserved for future per-call headers and silently dropped.
+
+### Fixed
+
+- `compile_nl_to_dsl` no longer falls back to the module-level default
+  cache when the caller passes an empty `NLCompilationCache` — the
+  truthy-empty check now uses `is None`.
+
 ## [0.16.0] - 2026-04-17
 
 ### Added (agent-reasoning: predictable cost/budget before and during calls)

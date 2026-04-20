@@ -1,20 +1,24 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 from liquid.agent_tools import (
     aggregate,
     check_quota,
     check_rate_limit,
+    fetch_changes_since,
+    fetch_until,
     get_adapter_info,
     health_check,
     list_adapters,
+    search_nl,
     text_search,
     to_tools,
 )
 from liquid.agent_tools import estimate_fetch as estimate_fetch_tool
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
+from liquid.diff_sync import FetchChangesResult
 from liquid.estimate import FetchEstimate, estimate_fetch
 from liquid.exceptions import (
     ActionNotVerifiedError,
@@ -53,7 +57,7 @@ from liquid.models import (
     SyncConfig,
     SyncResult,
 )
-from liquid.models.response import FetchMeta, FetchResponse
+from liquid.models.response import FetchMeta, FetchResponse, FetchUntilResult, SearchNLResult
 from liquid.normalize import (
     Money,
     PaginationEnvelope,
@@ -74,10 +78,12 @@ from liquid.query import (
     search_records,
     validate_query,
 )
+from liquid.query.nl import NLCompilationCache, NLCompileError
 from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
+from liquid.verbosity import VerbosityLevel, apply_verbosity
 
 __all__ = [
     "CANONICAL_INTENTS",
@@ -103,9 +109,11 @@ __all__ = [
     "Endpoint",
     "EndpointGoneError",
     "EndpointKind",
+    "FetchChangesResult",
     "FetchEstimate",
     "FetchMeta",
     "FetchResponse",
+    "FetchUntilResult",
     "FieldMapping",
     "FieldNotFoundError",
     "InMemoryCache",
@@ -118,12 +126,15 @@ __all__ = [
     "MappedRecord",
     "MappingError",
     "Money",
+    "NLCompilationCache",
+    "NLCompileError",
     "PaginationEnvelope",
     "QueryError",
     "QuotaInfo",
     "RateLimitError",
     "RateLimiter",
     "Recovery",
+    "SearchNLResult",
     "ServiceDownError",
     "SyncConfig",
     "SyncResult",
@@ -131,15 +142,19 @@ __all__ = [
     "ToolCall",
     "Vault",
     "VaultError",
+    "VerbosityLevel",
     "adapter_to_tools",
     "aggregate",
     "aggregate_async",
     "aggregate_records",
     "apply_query",
+    "apply_verbosity",
     "check_quota",
     "check_rate_limit",
     "estimate_fetch",
     "estimate_fetch_tool",
+    "fetch_changes_since",
+    "fetch_until",
     "get_adapter_info",
     "get_intent",
     "health_check",
@@ -153,6 +168,7 @@ __all__ = [
     "normalize_pagination",
     "normalize_response",
     "search_async",
+    "search_nl",
     "search_records",
     "text_search",
     "to_tools",

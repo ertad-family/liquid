@@ -72,8 +72,16 @@ class Fetcher:
         base_url: str,
         auth_ref: str,
         cursor: str | None = None,
+        extra_params: dict[str, Any] | None = None,
     ) -> FetchResult:
         params = self.pagination.get_request_params(cursor)
+        if extra_params:
+            # Caller-supplied query params (e.g. ``updated_since``) are merged
+            # in last so the pagination cursor can't accidentally overwrite
+            # them — pagination strategies only set their own keys.
+            merged = dict(params)
+            merged.update(extra_params)
+            params = merged
 
         # Determine per-endpoint override TTL (0 means bypass).
         override_ttl = self.cache_ttl_override.get(endpoint.path)
