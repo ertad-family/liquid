@@ -85,7 +85,7 @@ await liquid.execute_intent("charge_customer", {
 # Works on Stripe, Braintree, Square, Adyen — one agent mental model
 ```
 
-Ten canonical intents ship today: `charge_customer`, `refund_charge`, `create_customer`, `list_orders`, `get_order`, `cancel_order`, `send_email`, `create_ticket`, `list_tickets`, `update_ticket`.
+Ten canonical intents ship today: `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `list_orders`, `cancel_order`, `send_email`, `post_message`, `create_ticket`, `close_ticket`.
 
 ### Structured recovery — agents self-heal without parsing text
 
