@@ -41,13 +41,17 @@ class Money(BaseModel):
       (cents for USD/EUR; whole yen for JPY; millidinars for BHD).
     - ``currency``: ISO 4217 uppercase.
     - ``amount_decimal``: human-readable decimal in the major unit.
-    - ``original``: the untouched source value (kept for reference / debugging).
+    - ``original``: the untouched source value (kept as a Python attribute
+      for debugging / audit). Excluded from :meth:`model_dump` and
+      :meth:`model_dump_json` so serialised Money from different APIs stays
+      structurally identical (Jaccard = 1.0). Access explicitly via
+      ``money.original`` when you need the raw vendor payload.
     """
 
     amount_cents: int
     currency: str
     amount_decimal: Decimal
-    original: dict[str, Any] = Field(default_factory=dict)
+    original: dict[str, Any] = Field(default_factory=dict, exclude=True)
 
 
 def _decimals_for(currency: str) -> int:

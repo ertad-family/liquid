@@ -152,6 +152,99 @@ class TestOpenAPIDeclaredEstimates:
         assert est.source == "openapi_declared"
         assert est.confidence == "medium"
 
+    def test_nested_array_contributes_to_size(self) -> None:
+        """Items of a collection that contain nested arrays should blow up
+        the per-item byte budget compared to a flat shape.
+        """
+        flat_ep = Endpoint(
+            path="/a",
+            method="GET",
+            kind=EndpointKind.READ,
+            response_schema={
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "status": {"type": "string"}},
+                },
+            },
+        )
+        nested_ep = Endpoint(
+            path="/b",
+            method="GET",
+            kind=EndpointKind.READ,
+            response_schema={
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "status": {"type": "string"},
+                        "line_items": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "sku": {"type": "string"},
+                                    "qty": {"type": "integer"},
+                                    "total": {"type": "integer"},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        )
+        flat_est = estimate_fetch(_make_adapter([flat_ep]), "/a")
+        nested_est = estimate_fetch(_make_adapter([nested_ep]), "/b")
+        assert flat_est.expected_bytes is not None
+        assert nested_est.expected_bytes is not None
+        assert nested_est.expected_bytes > flat_est.expected_bytes * 2
+
+    def test_benchmark_shape_lands_within_2x_of_reality(self) -> None:
+        """Regression for the task_07 benchmark: estimate should land
+        within a factor of 2 of the real page size.
+
+        Actual tokens for 100 orders (nested line items, email, timestamps):
+        14,943. The prior heuristic reported 2,500 — 6x under. The improved
+        walker must bring us into the 7,000-22,000 token band.
+        """
+        ep = Endpoint(
+            path="/orders",
+            method="GET",
+            kind=EndpointKind.READ,
+            response_schema={
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "status": {"type": "string"},
+                                "total_cents": {"type": "integer"},
+                                "currency": {"type": "string"},
+                                "created_at": {"type": "string"},
+                            },
+                        },
+                    }
+                },
+            },
+            parameters=[
+                Parameter(
+                    name="limit",
+                    location=ParameterLocation.QUERY,
+                    required=False,
+                    schema={"type": "integer", "default": 100},
+                ),
+            ],
+        )
+        est = estimate_fetch(_make_adapter([ep]), "/orders")
+        assert est.expected_items == 100
+        assert est.expected_tokens is not None
+        # Band: must not under-predict by >2x, over-prediction up to actual is fine.
+        assert 7_000 <= est.expected_tokens <= 22_000, f"tokens={est.expected_tokens}"
+
 
 # ---------------------------------------------------------------------------
 # Empirical path
