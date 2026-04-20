@@ -148,6 +148,23 @@ data = await liquid.fetch(adapter, "/orders")
 
 ---
 
+## Measured impact
+
+Deterministic benchmarks on realistic agent tasks (500-order, 200-ticket fixtures, mocked HTTP) — reproducible via `python -m benchmarks.run`:
+
+| Task | Metric | Baseline | With Liquid | Delta |
+|---|---|---:|---:|---:|
+| Find 10 orders over $100 | tokens | 75,482 | 1,519 | **−98%** |
+| Revenue by status (aggregate) | tokens | 75,482 | 115 | **−100%** |
+| Fetch customer (id+email only) | tokens | 424 | 12 | **−97%** |
+| Recover from 401 | structured next_action | no | yes | — |
+| Find the shipping ticket | tokens | 14,588 | 154 | **−99%** |
+| Stripe↔PayPal consistency | field overlap | 0.11 | 1.00 | **+9×** |
+| Skip wasted call via estimate | tokens | 14,943 | 0 | **−100%** |
+| `max_tokens=2000` budget cap | tokens | 14,943 | 1,999 | **−87%** |
+
+Full methodology + per-task breakdown: [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
+
 ## Install
 
 ```bash
