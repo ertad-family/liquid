@@ -30,6 +30,26 @@ CHARS_PER_TOKEN = 4  # rough rule-of-thumb for English JSON payloads
 DEFAULT_COLLECTION_PAGE_SIZE = 25
 DEFAULT_ITEM_BYTES = 400  # ~100 tokens per small JSON object
 
+# Per-type JSON byte estimates tuned to realistic payloads (IDs ~20 chars,
+# emails ~30, ISO 8601 timestamps ~25, enum strings ~8). The string default
+# is a conservative average.
+_SCALAR_BYTES: dict[str, int] = {
+    "string": 30,
+    "integer": 8,
+    "number": 12,
+    "boolean": 5,
+    "null": 4,
+}
+_FIELD_OVERHEAD = 4  # two quotes on the key + colon + trailing comma
+_DEFAULT_ARRAY_INNER_COUNT = 3  # nested collections (line items, tags, …)
+_MAX_SCHEMA_WALK_DEPTH = 6  # cycle guard
+
+# Declared OpenAPI schemas typically understate real payload size by ~2x due
+# to undocumented fields (nested line items, _links, metadata envelopes).
+# Applied to the declared shape at "medium" confidence. Tuned from the
+# benchmark fixture (see benchmarks/RESULTS.md task_07).
+SCHEMA_COVERAGE_FACTOR = 2.0
+
 
 EstimateSource = Literal["empirical", "crowdsourced", "openapi_declared", "heuristic"]
 EstimateConfidence = Literal["high", "medium", "low"]
@@ -108,12 +128,52 @@ def _empirical_stats(adapter: AdapterConfig, endpoint: Endpoint) -> dict[str, An
     return None
 
 
+def _schema_node_bytes(node: Any, depth: int = 0) -> int:
+    """Recursively estimate the encoded JSON size of a schema node.
+
+    Walks ``object.properties`` and ``array.items`` trees. Unknown or
+    missing type fields are treated as strings (the most common scalar).
+    Respects ``x-liquid-inner-count`` and ``minItems`` for array sizing.
+    """
+    if depth >= _MAX_SCHEMA_WALK_DEPTH or not isinstance(node, dict):
+        return _SCALAR_BYTES["string"]
+
+    node_type = node.get("type")
+    if node_type == "object":
+        props = node.get("properties")
+        if not isinstance(props, dict) or not props:
+            return _SCALAR_BYTES["string"]
+        total = 2  # { }
+        for key, sub in props.items():
+            key_len = len(str(key))
+            total += key_len + _FIELD_OVERHEAD + _schema_node_bytes(sub, depth + 1)
+        return total
+
+    if node_type == "array":
+        items = node.get("items")
+        inner = _schema_node_bytes(items, depth + 1) if isinstance(items, dict) else _SCALAR_BYTES["string"]
+        hinted = node.get("x-liquid-inner-count")
+        min_items = node.get("minItems")
+        if isinstance(hinted, int) and hinted > 0:
+            count = hinted
+        elif isinstance(min_items, int) and min_items > 0:
+            count = min_items
+        else:
+            count = _DEFAULT_ARRAY_INNER_COUNT
+        # brackets + N items + (N-1) commas, approximated as N * (inner + 1)
+        return 2 + count * (inner + 1)
+
+    return _SCALAR_BYTES.get(node_type or "string", _SCALAR_BYTES["string"])
+
+
 def _item_bytes_from_schema(response_schema: dict[str, Any] | None) -> int | None:
     """Best-effort per-item size from an OpenAPI response schema.
 
-    We walk the ``items`` / ``properties`` tree, counting scalar fields
-    with a flat 40-byte-per-field approximation. Returns ``None`` when the
-    schema is empty or doesn't describe an object.
+    Walks the ``items`` / ``properties`` tree recursively so nested
+    objects and arrays contribute realistic byte budgets. A fixed
+    :data:`SCHEMA_COVERAGE_FACTOR` pads for fields that are typically
+    present in real payloads but absent from declared schemas. Returns
+    ``None`` when the schema is empty or doesn't describe an object.
     """
     if not isinstance(response_schema, dict) or not response_schema:
         return None
@@ -125,14 +185,21 @@ def _item_bytes_from_schema(response_schema: dict[str, Any] | None) -> int | Non
             target = items
         else:
             return None
+    else:
+        for envelope_key in ("data", "results", "items"):
+            nested = (target.get("properties") or {}).get(envelope_key)
+            if isinstance(nested, dict) and nested.get("type") == "array":
+                inner = nested.get("items")
+                if isinstance(inner, dict):
+                    target = inner
+                    break
 
-    props = target.get("properties")
-    if not isinstance(props, dict) or not props:
+    if target.get("type") != "object" or not isinstance(target.get("properties"), dict):
         return None
 
-    # ~40 bytes per scalar field is a decent baseline for JSON objects with
-    # short keys and short string values.
-    return max(DEFAULT_ITEM_BYTES // 4, 40 * len(props))
+    raw_bytes = _schema_node_bytes(target)
+    padded = int(raw_bytes * SCHEMA_COVERAGE_FACTOR)
+    return max(padded, DEFAULT_ITEM_BYTES // 4)
 
 
 def _is_collection_response(response_schema: dict[str, Any] | None) -> bool:

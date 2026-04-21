@@ -59,15 +59,13 @@ async def run() -> TaskResult:
     paypal_amount_dict = paypal["purchase_units"][0]["amount"]
     paypal_money = normalize_money(paypal_amount_dict)
     assert stripe_money is not None and paypal_money is not None
+    # ``Money.original`` is excluded from ``model_dump`` so the serialised
+    # shape stays identical across vendors — the agent sees one canonical
+    # dict, not two almost-identical ones.
     canonical_stripe = stripe_money.model_dump(mode="json")
     canonical_paypal = paypal_money.model_dump(mode="json")
-    # Similarity on the **actionable** canonical fields — drop ``original``
-    # because it's intentionally a verbatim echo of the source and will
-    # diverge between APIs even after normalization.
-    actionable_stripe = {k: v for k, v in canonical_stripe.items() if k != "original"}
-    actionable_paypal = {k: v for k, v in canonical_paypal.items() if k != "original"}
-    liquid_similarity = _jaccard(_flat_keys(actionable_stripe), _flat_keys(actionable_paypal))
-    liquid_tokens = estimate_tokens(actionable_stripe) + estimate_tokens(actionable_paypal)
+    liquid_similarity = _jaccard(_flat_keys(canonical_stripe), _flat_keys(canonical_paypal))
+    liquid_tokens = estimate_tokens(canonical_stripe) + estimate_tokens(canonical_paypal)
 
     # Sanity: same economic meaning?
     economic_match = (

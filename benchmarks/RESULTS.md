@@ -1,7 +1,7 @@
 # Liquid benchmark results
 
-- **liquid version**: 0.17.0
-- **date (UTC)**: 2026-04-20T16:43:53+00:00
+- **liquid version**: 0.18.0
+- **date (UTC)**: 2026-04-20T22:16:22+00:00
 - **python**: 3.12.3
 - **platform**: Linux 6.8.0-107-generic
 
@@ -142,31 +142,12 @@ Details:
   "stripe_money": {
     "amount_cents": 9999,
     "currency": "USD",
-    "amount_decimal": "99.99",
-    "original": {
-      "id": "ch_3OXYZ1234567890",
-      "object": "charge",
-      "amount": 9999,
-      "currency": "usd",
-      "status": "succeeded",
-      "created": 1742480000,
-      "description": "Test charge",
-      "customer": "cus_00042",
-      "payment_method": "pm_card_visa",
-      "receipt_url": "https://pay.stripe.com/receipts/3OXYZ",
-      "paid": true,
-      "captured": true,
-      "livemode": false
-    }
+    "amount_decimal": "99.99"
   },
   "paypal_money": {
     "amount_cents": 9999,
     "currency": "USD",
-    "amount_decimal": "99.99",
-    "original": {
-      "value": "99.99",
-      "currency_code": "USD"
-    }
+    "amount_decimal": "99.99"
   },
   "economic_match": true
 }
@@ -184,7 +165,7 @@ Details:
 
 ```json
 {
-  "estimate_expected_tokens": 2500,
+  "estimate_expected_tokens": 9350,
   "estimate_expected_items": 100,
   "estimate_confidence": "medium",
   "estimate_source": "openapi_declared",

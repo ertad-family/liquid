@@ -136,3 +136,35 @@ class TestIdempotent:
     def test_money_input_returned_as_is(self):
         original = Money(amount_cents=500, currency="USD", amount_decimal=Decimal("5.00"))
         assert normalize_money(original) is original
+
+
+class TestSerialization:
+    """Cross-API canonicalisation relies on serialised Money being identical.
+
+    ``original`` is kept as a Python attribute for audit/debug but must
+    never appear in ``model_dump`` output — otherwise two vendors' payloads
+    serialise to structurally different dicts.
+    """
+
+    def test_model_dump_excludes_original(self):
+        m = normalize_money({"amount": 1000, "currency": "usd"})
+        assert m is not None
+        dumped = m.model_dump()
+        assert "original" not in dumped
+        assert set(dumped.keys()) == {"amount_cents", "currency", "amount_decimal"}
+
+    def test_model_dump_json_excludes_original(self):
+        m = normalize_money({"amount": 1000, "currency": "usd"})
+        assert m is not None
+        assert "original" not in m.model_dump_json()
+
+    def test_original_attribute_still_accessible(self):
+        m = normalize_money({"amount": 1000, "currency": "usd"})
+        assert m is not None
+        assert m.original == {"amount": 1000, "currency": "usd"}
+
+    def test_stripe_and_paypal_serialise_identically(self):
+        stripe = normalize_money({"amount": 9999, "currency": "usd"})
+        paypal = normalize_money({"value": "99.99", "currency_code": "USD"})
+        assert stripe is not None and paypal is not None
+        assert stripe.model_dump() == paypal.model_dump()

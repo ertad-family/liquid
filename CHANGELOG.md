@@ -2,6 +2,25 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.18.0] - 2026-04-20
+
+### Changed (agent-ergonomics cleanup from 0.17 benchmark findings)
+
+- **`estimate_fetch` predicts within ~2x of reality** (was ~6x under). The
+  per-item byte budget now walks the OpenAPI response schema recursively,
+  contributing nested arrays and objects to the total instead of flat-summing
+  scalar field counts. A new `SCHEMA_COVERAGE_FACTOR = 2.0` pads for fields
+  that declared schemas typically omit (metadata envelopes, `_links`, nested
+  line items). On the benchmark orders fixture `expected_tokens` moves from
+  2,500 → 9,350 against actual 14,943. Arrays respect `x-liquid-inner-count`
+  and `minItems` hints when present.
+- **`Money.original` is excluded from `model_dump` / `model_dump_json`.**
+  The source-shape echo is still available as a Python attribute for
+  debugging and audit, but serialised Money from different vendors is now
+  structurally identical — Jaccard similarity between a serialised Stripe
+  charge and a serialised PayPal payment jumps from ~0.17 to 1.0 out of the
+  box, without callers having to strip `original` themselves.
+
 ## [0.17.0] - 2026-04-17
 
 ### Added (agent-convenience: verbosity, predicate pagination, diff sync, NL search)
