@@ -1,6 +1,8 @@
 """Liquid — Zapier for AI agents. Connect to any API on the fly."""
 
-__version__ = "0.18.0"
+from importlib.metadata import version as _pkg_version
+
+__version__ = _pkg_version("liquid-api")
 
 from liquid.agent_tools import (
     aggregate,

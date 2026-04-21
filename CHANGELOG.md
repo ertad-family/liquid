@@ -2,6 +2,19 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.18.1] - 2026-04-20
+
+### Fixed
+
+- **Single source of truth for version.** `src/liquid/__init__.py` now reads
+  `__version__` via `importlib.metadata.version("liquid-api")` instead of
+  hardcoding a string that had to be kept in sync with `pyproject.toml` on
+  every release. The `tests/test_smoke.py` invariant is now "`__version__`
+  equals package metadata" rather than "both literals match". Fixes the CI
+  failure that blocked the 0.18.0 PyPI publish when `test_smoke.py` still
+  asserted `"0.17.0"`. Same root cause as the `/health` drift patched in
+  liquid-cloud 0.3.3.
+
 ## [0.18.0] - 2026-04-20
 
 ### Changed (agent-ergonomics cleanup from 0.17 benchmark findings)
