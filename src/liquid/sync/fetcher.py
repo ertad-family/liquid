@@ -20,6 +20,7 @@ from liquid.sync.pagination import NoPagination, PaginationStrategy
 from liquid.sync.selector import RecordSelector
 
 if TYPE_CHECKING:
+    from liquid.auth.schemes import AuthScheme
     from liquid.protocols import CacheStore, Vault
     from liquid.sync.rate_limiter import RateLimiter
     from liquid.telemetry import TelemetryCollector
@@ -73,6 +74,7 @@ class Fetcher:
         auth_ref: str,
         cursor: str | None = None,
         extra_params: dict[str, Any] | None = None,
+        auth_scheme: AuthScheme | None = None,
     ) -> FetchResult:
         params = self.pagination.get_request_params(cursor)
         if extra_params:
@@ -103,8 +105,13 @@ class Fetcher:
                     raw_response=None,
                 )
 
-        auth_value = await self.vault.get(auth_ref)
-        headers = {**self.extra_headers, "Authorization": f"Bearer {auth_value}"}
+        headers = dict(self.extra_headers)
+        auth: httpx.Auth | None = None
+        if auth_scheme is not None:
+            auth = await auth_scheme.build_httpx_auth(self.vault, auth_ref)
+        else:
+            auth_value = await self.vault.get(auth_ref)
+            headers["Authorization"] = f"Bearer {auth_value}"
 
         url = f"{base_url.rstrip('/')}{endpoint.path}"
 
@@ -118,6 +125,7 @@ class Fetcher:
             url=url,
             params=params,
             headers=headers,
+            auth=auth,
         )
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 

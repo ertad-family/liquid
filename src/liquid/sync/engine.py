@@ -109,6 +109,7 @@ class SyncEngine:
                         base_url=config.schema_.source_url,
                         auth_ref=config.auth_ref,
                         cursor=c,
+                        auth_scheme=config.auth_scheme,
                     ),
                     self.retry_policy,
                 )

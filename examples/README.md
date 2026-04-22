@@ -28,6 +28,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 10 | [`10_search_nl.py`](10_search_nl.py) | `search_nl()` — natural-language → DSL via LLM | 0.17 |
 | 11 | [`11_canonical_money.py`](11_canonical_money.py) | `normalize_money()` — one shape, any processor | 0.14 |
 | 12 | [`12_to_tools_mcp.py`](12_to_tools_mcp.py) | `adapter.to_tools(format="mcp")` | 0.6 |
+| 13 | [`13_auth_schemes.py`](13_auth_schemes.py) | HMAC + AWS SigV4 + OAuth2 refresh | 0.19 |
 
 ## Where to go next
 

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from liquid.auth.schemes import AuthScheme  # noqa: TC001
 from liquid.intent.models import IntentConfig  # noqa: TC001
 from liquid.models.action import ActionConfig  # noqa: TC001
 from liquid.models.schema import APISchema  # noqa: TC001
@@ -36,6 +37,7 @@ class AdapterConfig(BaseModel):
     verified_by: str | None = None
     verified_at: datetime | None = None
     version: int = 1
+    auth_scheme: AuthScheme | None = Field(default=None, discriminator="kind")
 
     model_config = {"populate_by_name": True}
 

@@ -2,6 +2,35 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.19.0] - 2026-04-22
+
+### Added — auth breadth (closes day-1 "how do I connect to S3?" pain)
+
+- **Pluggable auth schemes** via `AdapterConfig.auth_scheme`. The fetcher
+  delegates to the scheme's `httpx.Auth` on every request, so signing has
+  full access to the outgoing body, headers, and URL — no bolt-on middleware.
+  Discriminated union with six concrete kinds:
+  - `BearerAuth` — static bearer token (default).
+  - `ApiKeyAuth` — header or query-param placement.
+  - `BasicAuth` — HTTP Basic with vault-resolved user/pass.
+  - `HMACAuth` — generic HMAC signing (SHA-256/SHA-1/SHA-512), configurable
+    signing template with `{method}`, `{path}`, `{query}`, `{body}`,
+    `{timestamp}` placeholders; hex or base64 output. Covers Stripe webhooks,
+    Shopify, GitHub, and custom HMAC APIs.
+  - `AwsSigV4Auth` — full AWS Signature Version 4 over the canonical
+    request + string-to-sign + derived signing key. Unlocks the entire AWS
+    surface (S3, DynamoDB, SQS, etc.) via `region` + `service`.
+  - `OAuth2Auth` — bearer with automatic refresh on 401. Supports
+    `refresh_token` and `client_credentials` grants, `scope`, `audience`
+    (Auth0-style), and both `client_secret_post` / `client_secret_basic`
+    token-endpoint auth methods.
+- Adapters without `auth_scheme` keep the existing Bearer-only fetch path
+  (zero breaking changes).
+- New unit tests per scheme against known vectors (Stripe-style HMAC,
+  Shopify base64, AWS SigV4 fixed-date canonical request, OAuth2
+  refresh round-trip through MockTransport).
+- New `examples/13_auth_schemes.py` — HMAC + SigV4 + OAuth2 in 100 LoC.
+
 ## [0.18.1] - 2026-04-20
 
 ### Fixed

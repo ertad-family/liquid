@@ -412,6 +412,7 @@ class Liquid:
                 endpoint=target_ep,
                 base_url=config.schema_.source_url,
                 auth_ref=config.auth_ref,
+                auth_scheme=config.auth_scheme,
             )
             timing_ms = int((_time.perf_counter() - t0) * 1000)
             mapper = RecordMapper(config.mappings)

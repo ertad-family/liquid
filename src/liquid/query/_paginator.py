@@ -127,6 +127,7 @@ async def _walk_pages(
                 auth_ref=config.auth_ref,
                 cursor=cursor,
                 extra_params=extra_params,
+                auth_scheme=config.auth_scheme,
             )
             mapped = mapper.map_batch(result.records, endpoint_path)
             yield [r.mapped_data for r in mapped]
