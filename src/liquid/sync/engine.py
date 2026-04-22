@@ -110,6 +110,7 @@ class SyncEngine:
                         auth_ref=config.auth_ref,
                         cursor=c,
                         auth_scheme=config.auth_scheme,
+                        expected_api_version=config.schema_.api_version,
                     ),
                     self.retry_policy,
                 )

@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.22.0] - 2026-04-22
+
+### Added — schema evolution (library-side MVP)
+
+- **HTTP-header evolution signals** surfaced on every fetch/sync response:
+  - `Deprecation` header (RFC 9745) — recognised with optional date, classified
+    `info` when in the future / `warn` when immediate.
+  - `Sunset` header (RFC 8594) — `critical` when already past, `warn` otherwise.
+  - Version drift — `APISchema.api_version` (recorded at discovery) compared
+    against any of `API-Version`, `X-API-Version`, `OpenAI-Version`,
+    `Stripe-Version`, `GitHub-Version`, or `X-MS-API-Version` on the response.
+- **`Liquid(on_evolution=callback)`** — fires the user's callback once per
+  signal. Callback exceptions are swallowed so evolution detection never
+  takes down a live fetch.
+- **`_meta.evolution`** — when `include_meta=True`, every signal is
+  serialised into the response meta block. Agents can reason about
+  upcoming changes without parsing logs.
+- New `examples/16_evolution_signals.py` — Deprecation + Sunset + Stripe
+  version drift in one response.
+- 12 new unit + integration tests including malformed-header-dropped and
+  callback-failure-isolated.
+
+Cloud-side `schema_history` snapshots are deferred to a later release; this
+ships the synchronous-per-response piece that works without cloud.
+
 ## [0.21.0] - 2026-04-22
 
 ### Added — streaming adapters (NDJSON + SSE)

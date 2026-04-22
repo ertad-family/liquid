@@ -27,17 +27,19 @@ if TYPE_CHECKING:
 
 
 class FetchResult:
-    __slots__ = ("next_cursor", "raw_response", "records")
+    __slots__ = ("evolution_signals", "next_cursor", "raw_response", "records")
 
     def __init__(
         self,
         records: list[dict[str, Any]],
         next_cursor: str | None,
         raw_response: httpx.Response | None,
+        evolution_signals: list[Any] | None = None,
     ) -> None:
         self.records = records
         self.next_cursor = next_cursor
         self.raw_response = raw_response
+        self.evolution_signals = evolution_signals or []
 
 
 class Fetcher:
@@ -75,6 +77,7 @@ class Fetcher:
         cursor: str | None = None,
         extra_params: dict[str, Any] | None = None,
         auth_scheme: AuthScheme | None = None,
+        expected_api_version: str | None = None,
     ) -> FetchResult:
         params = self.pagination.get_request_params(cursor)
         if extra_params:
@@ -142,11 +145,24 @@ class Fetcher:
 
         _check_response(response)
 
+        from liquid.evolution import extract_signals
+
+        signals = extract_signals(
+            dict(response.headers),
+            endpoint=endpoint.path,
+            expected_version=expected_api_version,
+        )
+
         data = response.json()
         records = self.selector.select(data)
         next_cursor = self.pagination.extract_next_cursor(response)
 
-        result = FetchResult(records=records, next_cursor=next_cursor, raw_response=response)
+        result = FetchResult(
+            records=records,
+            next_cursor=next_cursor,
+            raw_response=response,
+            evolution_signals=signals,
+        )
 
         if cache_active and cache_key is not None and self.cache is not None:
             ttl = _resolve_ttl(override_ttl, response)
