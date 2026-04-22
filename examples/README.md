@@ -30,6 +30,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 12 | [`12_to_tools_mcp.py`](12_to_tools_mcp.py) | `adapter.to_tools(format="mcp")` | 0.6 |
 | 13 | [`13_auth_schemes.py`](13_auth_schemes.py) | HMAC + AWS SigV4 + OAuth2 refresh | 0.19 |
 | 14 | [`14_webhook_inbound.py`](14_webhook_inbound.py) | `verify_webhook()` — Stripe + dedupe + tamper detection | 0.20 |
+| 15 | [`15_streaming.py`](15_streaming.py) | `Liquid.stream()` — NDJSON + SSE | 0.21 |
 
 ## Where to go next
 

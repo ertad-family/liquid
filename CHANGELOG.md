@@ -2,6 +2,26 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.21.0] - 2026-04-22
+
+### Added — streaming adapters (NDJSON + SSE)
+
+- **`Liquid.stream(config, endpoint, protocol="auto")`** — async iterator
+  over streamed records. Picks parser from `Content-Type`:
+  `application/x-ndjson` → dicts, `text/event-stream` → `SSEEvent`. Opens
+  a single long-lived HTTP stream via `httpx.AsyncClient.stream()` with the
+  adapter's `auth_scheme` applied and rate limiting honoured.
+- **`parse_ndjson(byte_stream)`** — buffered line parser that survives
+  arbitrary chunk boundaries (tested byte-by-byte); `strict=False` mode
+  skips malformed lines instead of raising.
+- **`parse_sse(byte_stream)`** — WHATWG-spec-compliant parser: handles
+  `event:`/`data:`/`id:`/`retry:`, multi-line data joining, CRLF
+  normalisation, comment lines, and the common LLM token-stream pattern.
+- New `examples/15_streaming.py` — NDJSON bulk export + SSE LLM token
+  stream in the same file.
+- 16 new tests including byte-by-byte chunking, LLM token streams,
+  CRLF normalisation, and end-to-end through MockTransport.
+
 ## [0.20.0] - 2026-04-22
 
 ### Added — webhook inbound surface (mirror of 0.19 outbound signing)
