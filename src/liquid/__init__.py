@@ -31,6 +31,7 @@ from liquid.cache import InMemoryCache
 from liquid.client import Liquid
 from liquid.diff_sync import FetchChangesResult
 from liquid.estimate import FetchEstimate, estimate_fetch
+from liquid.evolution import EvolutionKind, EvolutionSignal, extract_signals
 from liquid.exceptions import (
     ActionNotVerifiedError,
     AuthError,
@@ -142,6 +143,8 @@ __all__ = [
     "Endpoint",
     "EndpointGoneError",
     "EndpointKind",
+    "EvolutionKind",
+    "EvolutionSignal",
     "FetchChangesResult",
     "FetchEstimate",
     "FetchMeta",
@@ -200,6 +203,7 @@ __all__ = [
     "check_rate_limit",
     "estimate_fetch",
     "estimate_fetch_tool",
+    "extract_signals",
     "fetch_changes_since",
     "fetch_until",
     "get_adapter_info",

@@ -81,6 +81,10 @@ class APISchema(BaseModel):
     auth: AuthRequirement
     rate_limits: RateLimits | None = None
     discovered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    api_version: str | None = None
+    """Provider-reported API version at discovery time. When set, every
+    subsequent response is compared against it — mismatch surfaces as an
+    :class:`~liquid.evolution.EvolutionKind.VERSION_DRIFT` signal."""
 
 
 class SchemaDiff(BaseModel):

@@ -72,6 +72,7 @@ class Liquid:
         normalize_output: bool = False,
         normalize_hints: dict[str, Any] | None = None,
         include_meta: bool = False,
+        on_evolution: Callable[[Any], None] | None = None,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -86,6 +87,7 @@ class Liquid:
         self.normalize_output = normalize_output
         self.normalize_hints = normalize_hints
         self.include_meta = include_meta
+        self._on_evolution = on_evolution
 
         self.telemetry: TelemetryCollector | None = None
         if contribute_telemetry:
@@ -103,6 +105,21 @@ class Liquid:
         from liquid.action.proposer import ActionProposer
 
         self._action_proposer = ActionProposer(llm, knowledge)
+
+    def _dispatch_evolution_signals(self, signals: list[Any]) -> None:
+        """Fire the user-provided ``on_evolution`` callback for each signal.
+
+        Errors inside the callback are swallowed — evolution detection must
+        never take down a live fetch. Agents that want hard failure can wrap
+        their own logic inside.
+        """
+        if not signals or self._on_evolution is None:
+            return
+        for sig in signals:
+            try:
+                self._on_evolution(sig)
+            except Exception:
+                continue
 
     def _maybe_normalize(self, data: Any) -> Any:
         """Apply output normalization when the ``normalize_output`` flag is on.
@@ -413,7 +430,9 @@ class Liquid:
                 base_url=config.schema_.source_url,
                 auth_ref=config.auth_ref,
                 auth_scheme=config.auth_scheme,
+                expected_api_version=config.schema_.api_version,
             )
+            self._dispatch_evolution_signals(result.evolution_signals)
             timing_ms = int((_time.perf_counter() - t0) * 1000)
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
@@ -446,6 +465,9 @@ class Liquid:
             if effective_meta:
                 from liquid.meta import build_meta, wrap_with_meta
 
+                extra_meta: dict[str, Any] = {}
+                if result.evolution_signals:
+                    extra_meta["evolution"] = [s.model_dump(mode="json") for s in result.evolution_signals]
                 meta = build_meta(
                     source="live",
                     adapter=config.schema_.service_name,
@@ -453,6 +475,7 @@ class Liquid:
                     truncated=truncated,
                     truncated_at=truncated_at,
                     returned_items=len(payload) if isinstance(payload, list) else None,
+                    extra=extra_meta or None,
                 )
                 payload = wrap_with_meta(payload, meta)
 
