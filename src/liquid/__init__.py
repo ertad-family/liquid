@@ -18,6 +18,15 @@ from liquid.agent_tools import (
     to_tools,
 )
 from liquid.agent_tools import estimate_fetch as estimate_fetch_tool
+from liquid.auth.schemes import (
+    ApiKeyAuth,
+    AuthScheme,
+    AwsSigV4Auth,
+    BasicAuth,
+    BearerAuth,
+    HMACAuth,
+    OAuth2Auth,
+)
 from liquid.cache import InMemoryCache
 from liquid.client import Liquid
 from liquid.diff_sync import FetchChangesResult
@@ -99,11 +108,16 @@ __all__ = [
     "AdapterConfig",
     "AdapterRegistry",
     "AggregateError",
+    "ApiKeyAuth",
     "AuthError",
     "AuthRequirement",
+    "AuthScheme",
     "AuthSetupError",
+    "AwsSigV4Auth",
+    "BasicAuth",
     "BatchErrorPolicy",
     "BatchResult",
+    "BearerAuth",
     "CacheStore",
     "DataSink",
     "DeliveryResult",
@@ -118,6 +132,7 @@ __all__ = [
     "FetchUntilResult",
     "FieldMapping",
     "FieldNotFoundError",
+    "HMACAuth",
     "InMemoryCache",
     "Intent",
     "IntentConfig",
@@ -130,6 +145,7 @@ __all__ = [
     "Money",
     "NLCompilationCache",
     "NLCompileError",
+    "OAuth2Auth",
     "PaginationEnvelope",
     "QueryError",
     "QuotaInfo",
