@@ -79,6 +79,7 @@ from liquid.normalize import (
     normalize_pagination,
     normalize_response,
 )
+from liquid.observability import EventKind, EventStore, FetchEvent, InMemoryEventStore
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
 from liquid.query import (
     AggregateError,
@@ -144,10 +145,13 @@ __all__ = [
     "Endpoint",
     "EndpointGoneError",
     "EndpointKind",
+    "EventKind",
+    "EventStore",
     "EvolutionKind",
     "EvolutionSignal",
     "FetchChangesResult",
     "FetchEstimate",
+    "FetchEvent",
     "FetchMeta",
     "FetchResponse",
     "FetchUntilResult",
@@ -158,6 +162,7 @@ __all__ = [
     "HMACAuth",
     "IdempotencyStore",
     "InMemoryCache",
+    "InMemoryEventStore",
     "InMemoryIdempotencyStore",
     "Intent",
     "IntentConfig",

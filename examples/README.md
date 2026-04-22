@@ -33,6 +33,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 15 | [`15_streaming.py`](15_streaming.py) | `Liquid.stream()` — NDJSON + SSE | 0.21 |
 | 16 | [`16_evolution_signals.py`](16_evolution_signals.py) | `on_evolution` — Deprecation/Sunset/version-drift | 0.22 |
 | 17 | [`17_semantic_recovery.py`](17_semantic_recovery.py) | `on_schema_mismatch` — field-missing / type-mismatch | 0.23 |
+| 18 | [`18_observability.py`](18_observability.py) | `InMemoryEventStore` — "what did the agent do?" queries | 0.24 |
 
 ## Where to go next
 
