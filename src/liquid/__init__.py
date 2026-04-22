@@ -95,6 +95,21 @@ from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
 from liquid.verbosity import VerbosityLevel, apply_verbosity
+from liquid.webhooks import (
+    DuplicateEventError,
+    GenericHMACWebhookVerifier,
+    GitHubWebhookVerifier,
+    IdempotencyStore,
+    InMemoryIdempotencyStore,
+    InvalidSignatureError,
+    ShopifyWebhookVerifier,
+    SlackWebhookVerifier,
+    StripeWebhookVerifier,
+    WebhookEvent,
+    WebhookVerificationError,
+    WebhookVerifier,
+    verify_webhook,
+)
 
 __all__ = [
     "CANONICAL_INTENTS",
@@ -122,6 +137,7 @@ __all__ = [
     "DataSink",
     "DeliveryResult",
     "DiscoveryError",
+    "DuplicateEventError",
     "Endpoint",
     "EndpointGoneError",
     "EndpointKind",
@@ -132,10 +148,15 @@ __all__ = [
     "FetchUntilResult",
     "FieldMapping",
     "FieldNotFoundError",
+    "GenericHMACWebhookVerifier",
+    "GitHubWebhookVerifier",
     "HMACAuth",
+    "IdempotencyStore",
     "InMemoryCache",
+    "InMemoryIdempotencyStore",
     "Intent",
     "IntentConfig",
+    "InvalidSignatureError",
     "KnowledgeStore",
     "LLMBackend",
     "Liquid",
@@ -154,6 +175,9 @@ __all__ = [
     "Recovery",
     "SearchNLResult",
     "ServiceDownError",
+    "ShopifyWebhookVerifier",
+    "SlackWebhookVerifier",
+    "StripeWebhookVerifier",
     "SyncConfig",
     "SyncResult",
     "SyncRuntimeError",
@@ -161,6 +185,9 @@ __all__ = [
     "Vault",
     "VaultError",
     "VerbosityLevel",
+    "WebhookEvent",
+    "WebhookVerificationError",
+    "WebhookVerifier",
     "adapter_to_tools",
     "aggregate",
     "aggregate_async",
@@ -191,4 +218,5 @@ __all__ = [
     "text_search",
     "to_tools",
     "validate_query",
+    "verify_webhook",
 ]
