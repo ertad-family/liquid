@@ -2,6 +2,33 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.20.0] - 2026-04-22
+
+### Added — webhook inbound surface (mirror of 0.19 outbound signing)
+
+- **`liquid.verify_webhook(body, headers, verifier)`** — single entrypoint
+  that verifies the signature, parses the JSON payload, extracts event
+  identity, optionally dedupes against an `IdempotencyStore`, and returns
+  a typed `WebhookEvent`. Raises `InvalidSignatureError` on mismatch,
+  `DuplicateEventError` on replay.
+- **Pre-shipped provider verifiers**:
+  - `StripeWebhookVerifier` — `t=/v1=` header, HMAC-SHA256 over
+    `"{t}.{body}"`, key-rotation aware (accepts any matching `v1=`),
+    configurable timestamp tolerance (default 5 min).
+  - `GitHubWebhookVerifier` — `X-Hub-Signature-256` (+ legacy SHA-1
+    fallback).
+  - `ShopifyWebhookVerifier` — base64 HMAC-SHA256 over raw body.
+  - `SlackWebhookVerifier` — `v0:{ts}:{body}` signing basestring.
+  - `GenericHMACWebhookVerifier` — configurable header/template/encoding
+    for everything else.
+- **`InMemoryIdempotencyStore`** + `IdempotencyStore` protocol — default
+  LRU-capped in-memory dedup with TTL; swap for Redis/DB in production.
+- **`WebhookEvent`** preserves the raw body so downstream handlers can
+  re-verify or re-sign without keeping a second copy.
+- New `examples/14_webhook_inbound.py` — verify + dedupe + tamper-detection
+  demo.
+- 23 new unit tests with known vectors for each provider.
+
 ## [0.19.0] - 2026-04-22
 
 ### Added — auth breadth (closes day-1 "how do I connect to S3?" pain)

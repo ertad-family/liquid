@@ -29,6 +29,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 11 | [`11_canonical_money.py`](11_canonical_money.py) | `normalize_money()` — one shape, any processor | 0.14 |
 | 12 | [`12_to_tools_mcp.py`](12_to_tools_mcp.py) | `adapter.to_tools(format="mcp")` | 0.6 |
 | 13 | [`13_auth_schemes.py`](13_auth_schemes.py) | HMAC + AWS SigV4 + OAuth2 refresh | 0.19 |
+| 14 | [`14_webhook_inbound.py`](14_webhook_inbound.py) | `verify_webhook()` — Stripe + dedupe + tamper detection | 0.20 |
 
 ## Where to go next
 
