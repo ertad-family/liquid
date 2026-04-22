@@ -96,6 +96,7 @@ from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
+from liquid.validation import MismatchKind, ResponseValidator, SchemaMismatchSignal
 from liquid.verbosity import VerbosityLevel, apply_verbosity
 from liquid.webhooks import (
     DuplicateEventError,
@@ -167,6 +168,7 @@ __all__ = [
     "LiquidError",
     "MappedRecord",
     "MappingError",
+    "MismatchKind",
     "Money",
     "NLCompilationCache",
     "NLCompileError",
@@ -177,7 +179,9 @@ __all__ = [
     "RateLimitError",
     "RateLimiter",
     "Recovery",
+    "ResponseValidator",
     "SSEEvent",
+    "SchemaMismatchSignal",
     "SearchNLResult",
     "ServiceDownError",
     "ShopifyWebhookVerifier",

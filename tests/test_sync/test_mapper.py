@@ -47,10 +47,19 @@ class TestRecordMapper:
         result = mapper.map_record({"amount": 50.0})
         assert result.mapped_data == {"amount": -50.0}
 
-    def test_missing_field_raises(self):
-        mapper = RecordMapper([FieldMapping(source_path="missing", target_field="x")])
+    def test_missing_field_raises_in_strict_mode(self):
+        mapper = RecordMapper([FieldMapping(source_path="missing", target_field="x")], strict=True)
         with pytest.raises(FieldNotFoundError):
             mapper.map_record({"other": 1})
+
+    def test_missing_field_lenient_emits_none(self):
+        """Default (non-strict) mode: missing source puts None in target and
+        records a mapping_error so downstream validators can see it."""
+        mapper = RecordMapper([FieldMapping(source_path="missing", target_field="x")])
+        result = mapper.map_record({"other": 1})
+        assert result.mapped_data == {"x": None}
+        assert result.mapping_errors is not None
+        assert "missing" in result.mapping_errors[0]
 
     def test_map_batch(self):
         mapper = RecordMapper([FieldMapping(source_path="id", target_field="id")])

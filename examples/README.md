@@ -32,6 +32,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 14 | [`14_webhook_inbound.py`](14_webhook_inbound.py) | `verify_webhook()` — Stripe + dedupe + tamper detection | 0.20 |
 | 15 | [`15_streaming.py`](15_streaming.py) | `Liquid.stream()` — NDJSON + SSE | 0.21 |
 | 16 | [`16_evolution_signals.py`](16_evolution_signals.py) | `on_evolution` — Deprecation/Sunset/version-drift | 0.22 |
+| 17 | [`17_semantic_recovery.py`](17_semantic_recovery.py) | `on_schema_mismatch` — field-missing / type-mismatch | 0.23 |
 
 ## Where to go next
 
