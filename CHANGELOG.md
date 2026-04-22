@@ -2,6 +2,27 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.24.0] - 2026-04-22
+
+### Added — retrospective observability
+
+- **`Liquid(event_store=...)`** — every fetch is recorded as a
+  :class:`FetchEvent` carrying adapter, endpoint, method, status code,
+  duration, record count, cache-hit flag, and the counts of evolution /
+  validation signals raised during that call.
+- **`EventStore` protocol** — minimal `append` + `query` interface.
+  Filter by `since`/`until`, `adapter`, `endpoint`, `kind`, or
+  `errors_only`; result ordering is newest-first with configurable
+  `limit`. Swap for Redis / Postgres / OpenTelemetry backends.
+- **`InMemoryEventStore`** — ring-buffered default (cap 10_000 events),
+  async-safe for single-event-loop use, zero external dependencies.
+- Store errors (append / query) are swallowed so losing an audit entry
+  can never fail the user's fetch.
+- New `examples/18_observability.py` — agent burst + per-endpoint / time
+  window / errors-only queries.
+- 13 new tests covering ring-buffer cap, filter combinations,
+  integration through `Liquid.fetch`, and the buggy-store safety rule.
+
 ## [0.23.0] - 2026-04-22
 
 ### Added — semantic recovery (response-shape validation)

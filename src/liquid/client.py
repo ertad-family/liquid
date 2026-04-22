@@ -75,6 +75,7 @@ class Liquid:
         on_evolution: Callable[[Any], None] | None = None,
         on_schema_mismatch: Callable[[Any], None] | None = None,
         validation_coverage_threshold: float = 0.9,
+        event_store: Any | None = None,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -92,6 +93,7 @@ class Liquid:
         self._on_evolution = on_evolution
         self._on_schema_mismatch = on_schema_mismatch
         self._validation_coverage_threshold = validation_coverage_threshold
+        self.event_store = event_store
 
         self.telemetry: TelemetryCollector | None = None
         if contribute_telemetry:
@@ -124,6 +126,48 @@ class Liquid:
                 self._on_evolution(sig)
             except Exception:
                 continue
+
+    async def _record_event(
+        self,
+        *,
+        kind: str,
+        adapter: str,
+        endpoint: str,
+        method: str = "GET",
+        status_code: int | None = None,
+        duration_ms: int = 0,
+        record_count: int | None = None,
+        cache_hit: bool = False,
+        evolution_count: int = 0,
+        validation_count: int = 0,
+        error_type: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Append a :class:`~liquid.observability.FetchEvent` if an event
+        store is configured. Errors inside the store are swallowed — losing
+        an audit entry is preferable to failing the user's fetch."""
+        if self.event_store is None:
+            return
+        from liquid.observability.events import EventKind, FetchEvent
+
+        try:
+            event = FetchEvent(
+                kind=EventKind(kind),
+                adapter=adapter,
+                endpoint=endpoint,
+                method=method,
+                status_code=status_code,
+                duration_ms=duration_ms,
+                record_count=record_count,
+                cache_hit=cache_hit,
+                evolution_signal_count=evolution_count,
+                validation_signal_count=validation_count,
+                error_type=error_type,
+                error_message=error_message,
+            )
+            await self.event_store.append(event)
+        except Exception:
+            return
 
     def _validate_response(
         self,
@@ -467,6 +511,19 @@ class Liquid:
             mapped = mapper.map_batch(result.records, ep_path)
             records: list[dict[str, Any]] = [r.mapped_data for r in mapped]
             validation_signals = self._validate_response(config, records, ep_path)
+
+            await self._record_event(
+                kind="fetch",
+                adapter=config.schema_.service_name,
+                endpoint=ep_path,
+                method=target_ep.method,
+                status_code=(result.raw_response.status_code if result.raw_response is not None else None),
+                duration_ms=timing_ms,
+                record_count=len(records),
+                cache_hit=result.raw_response is None and cache_store is not None,
+                evolution_count=len(result.evolution_signals),
+                validation_count=len(validation_signals),
+            )
             # ``full`` explicitly bypasses normalization; ``normal`` keeps
             # current behaviour (opt-in flag).
             if self.normalize_output and verbosity != "full":
