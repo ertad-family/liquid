@@ -2,6 +2,32 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.23.0] - 2026-04-22
+
+### Added — semantic recovery (response-shape validation)
+
+- **`ResponseValidator`** runs after `RecordMapper` and emits
+  `SchemaMismatchSignal` objects for two cases:
+  - `field_missing` — a declared mapping target is null/absent in more
+    than `(1 - coverage_threshold)` of records (default threshold 0.9).
+  - `type_mismatch` — values present but observed type doesn't match the
+    provided `type_hints` (rejects bool-as-int as a known common drift).
+- Each signal carries a structured `Recovery.next_action` pointing to the
+  canonical `rediscover_adapter` tool with the affected field, source
+  path, and observed/expected types. Agents can dispatch without parsing.
+- **`Liquid(on_schema_mismatch=callback, validation_coverage_threshold=0.9)`**
+  — per-instance callback, same safety model as `on_evolution` (errors in
+  the callback are swallowed). Signals also land in `_meta.validation`.
+- **`RecordMapper` default changed to lenient.** Missing source fields
+  now produce `None` in the target plus a `mapping_errors` entry instead
+  of raising `FieldNotFoundError` — prerequisite for validation (a
+  mapper crash would mask the real signal). Strict mode remains
+  available via `RecordMapper(..., strict=True)`.
+- New `examples/17_semantic_recovery.py` — provider renames a field,
+  validator catches it and emits the recovery plan.
+- 13 new tests (12 validator unit + 1 replacement for the old strict
+  assertion in mapper).
+
 ## [0.22.0] - 2026-04-22
 
 ### Added — schema evolution (library-side MVP)

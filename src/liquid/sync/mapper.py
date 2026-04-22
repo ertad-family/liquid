@@ -8,8 +8,9 @@ from liquid.sync.transform import UnsafeExpressionError, evaluate
 
 
 class RecordMapper:
-    def __init__(self, mappings: list[FieldMapping]) -> None:
+    def __init__(self, mappings: list[FieldMapping], *, strict: bool = False) -> None:
         self.mappings = mappings
+        self.strict = strict
 
     def map_record(self, record: dict[str, Any], source_endpoint: str = "") -> MappedRecord:
         mapped: dict[str, Any] = {}
@@ -19,7 +20,13 @@ class RecordMapper:
             try:
                 value = _extract_path(record, mapping.source_path)
             except KeyError as e:
-                raise FieldNotFoundError(f"Field not found: {mapping.source_path}") from e
+                if self.strict:
+                    raise FieldNotFoundError(f"Field not found: {mapping.source_path}") from e
+                # Lenient (default): emit None so downstream validation can
+                # detect the missing field via coverage rather than crashing.
+                mapped[mapping.target_field] = None
+                errors.append(f"Field not found: {mapping.source_path}")
+                continue
 
             if mapping.transform:
                 try:

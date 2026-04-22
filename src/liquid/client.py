@@ -73,6 +73,8 @@ class Liquid:
         normalize_hints: dict[str, Any] | None = None,
         include_meta: bool = False,
         on_evolution: Callable[[Any], None] | None = None,
+        on_schema_mismatch: Callable[[Any], None] | None = None,
+        validation_coverage_threshold: float = 0.9,
     ) -> None:
         self.llm = llm
         self.vault = vault
@@ -88,6 +90,8 @@ class Liquid:
         self.normalize_hints = normalize_hints
         self.include_meta = include_meta
         self._on_evolution = on_evolution
+        self._on_schema_mismatch = on_schema_mismatch
+        self._validation_coverage_threshold = validation_coverage_threshold
 
         self.telemetry: TelemetryCollector | None = None
         if contribute_telemetry:
@@ -120,6 +124,31 @@ class Liquid:
                 self._on_evolution(sig)
             except Exception:
                 continue
+
+    def _validate_response(
+        self,
+        config: AdapterConfig,
+        records: list[dict[str, Any]],
+        endpoint: str,
+    ) -> list[Any]:
+        """Run :class:`~liquid.validation.ResponseValidator` and dispatch
+        callbacks. Always returns the signal list for meta-block inclusion."""
+        if not config.mappings or not records:
+            return []
+        from liquid.validation import ResponseValidator
+
+        validator = ResponseValidator(
+            config.mappings,
+            coverage_threshold=self._validation_coverage_threshold,
+        )
+        signals = validator.validate(records, endpoint=endpoint)
+        if signals and self._on_schema_mismatch is not None:
+            for sig in signals:
+                try:
+                    self._on_schema_mismatch(sig)
+                except Exception:
+                    continue
+        return signals
 
     def _maybe_normalize(self, data: Any) -> Any:
         """Apply output normalization when the ``normalize_output`` flag is on.
@@ -437,6 +466,7 @@ class Liquid:
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
             records: list[dict[str, Any]] = [r.mapped_data for r in mapped]
+            validation_signals = self._validate_response(config, records, ep_path)
             # ``full`` explicitly bypasses normalization; ``normal`` keeps
             # current behaviour (opt-in flag).
             if self.normalize_output and verbosity != "full":
@@ -468,6 +498,8 @@ class Liquid:
                 extra_meta: dict[str, Any] = {}
                 if result.evolution_signals:
                     extra_meta["evolution"] = [s.model_dump(mode="json") for s in result.evolution_signals]
+                if validation_signals:
+                    extra_meta["validation"] = [s.model_dump(mode="json") for s in validation_signals]
                 meta = build_meta(
                     source="live",
                     adapter=config.schema_.service_name,
