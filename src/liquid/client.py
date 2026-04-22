@@ -480,6 +480,78 @@ class Liquid:
 
             return payload
 
+    async def stream(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        protocol: str = "auto",
+        extra_params: dict[str, Any] | None = None,
+    ) -> Any:
+        """Stream records from an endpoint that returns NDJSON or SSE.
+
+        Returns an async iterator that yields dict records (NDJSON) or
+        :class:`SSEEvent` instances (SSE). ``protocol="auto"`` detects from
+        the response ``Content-Type``. ``AdapterConfig.auth_scheme`` is
+        applied to the request; rate limiting is honoured.
+
+        The iterator holds an open HTTP stream — consume promptly or wrap
+        in ``async with`` via ``aclose()``.
+        """
+        from liquid.discovery.utils import managed_http_client
+        from liquid.streaming import parse_ndjson, parse_sse
+
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+        if target_ep is None:
+            msg = f"Endpoint {ep_path} not found in adapter schema"
+            raise ValueError(msg)
+
+        await self._ensure_rate_limit_seeded(config, ep_path)
+
+        async def _iter() -> Any:
+            async with managed_http_client(self._http_client) as client:
+                headers: dict[str, str] = {}
+                auth: httpx.Auth | None = None
+                if config.auth_scheme is not None:
+                    auth = await config.auth_scheme.build_httpx_auth(self.vault, config.auth_ref)
+                else:
+                    auth_value = await self.vault.get(config.auth_ref)
+                    headers["Authorization"] = f"Bearer {auth_value}"
+
+                url = f"{config.schema_.source_url.rstrip('/')}{ep_path}"
+                method = target_ep.method
+
+                rate_key = f"{config.config_id}:{ep_path}"
+                if self.rate_limiter is not None:
+                    await self.rate_limiter.acquire(rate_key)
+
+                async with client.stream(method, url, params=extra_params, headers=headers, auth=auth) as response:
+                    if not response.is_success:
+                        body = await response.aread()
+                        raise LiquidError(f"stream failed ({response.status_code}): {body[:200]!r}")
+
+                    resolved_protocol = protocol
+                    if resolved_protocol == "auto":
+                        ctype = response.headers.get("content-type", "").lower()
+                        if "text/event-stream" in ctype:
+                            resolved_protocol = "sse"
+                        elif "application/x-ndjson" in ctype or "application/jsonlines" in ctype:
+                            resolved_protocol = "ndjson"
+                        else:
+                            resolved_protocol = "ndjson"  # sensible default
+
+                    if resolved_protocol == "sse":
+                        async for ev in parse_sse(response.aiter_bytes()):
+                            yield ev
+                    elif resolved_protocol == "ndjson":
+                        async for obj in parse_ndjson(response.aiter_bytes()):
+                            yield obj
+                    else:
+                        raise ValueError(f"unsupported protocol: {resolved_protocol}")
+
+        return _iter()
+
     async def fetch_with_meta(
         self,
         config: AdapterConfig,

@@ -90,6 +90,7 @@ from liquid.query import (
     validate_query,
 )
 from liquid.query.nl import NLCompilationCache, NLCompileError
+from liquid.streaming import SSEEvent, parse_ndjson, parse_sse
 from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
@@ -173,6 +174,7 @@ __all__ = [
     "RateLimitError",
     "RateLimiter",
     "Recovery",
+    "SSEEvent",
     "SearchNLResult",
     "ServiceDownError",
     "ShopifyWebhookVerifier",
@@ -212,6 +214,8 @@ __all__ = [
     "normalize_money",
     "normalize_pagination",
     "normalize_response",
+    "parse_ndjson",
+    "parse_sse",
     "search_async",
     "search_nl",
     "search_records",
