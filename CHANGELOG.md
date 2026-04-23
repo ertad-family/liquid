@@ -2,6 +2,75 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.25.0] - 2026-04-23
+
+### Added — intent + normalizer breadth (research-backed)
+
+Canonical vocabulary expanded from 10 intents / 4 normalizers to **71 intents
+/ 12 normalizers**. Every addition is backed by a parallel-subagent research
+pass across the top 3-5 APIs in each domain (Stripe/Square/PayPal for
+payments, HubSpot/Salesforce/Pipedrive for CRM, Shopify/WooCommerce/BigCommerce
+for commerce, Slack/Discord/Teams for chat, Jira/Linear/GitHub for tickets,
+S3/Drive/Dropbox for files, Google Calendar/Graph for calendar,
+GitHub/GitLab/Bitbucket for PRs, GitHub Actions/GitLab CI for workflows,
+Mixpanel/Amplitude/Segment/GA4 for analytics).
+
+**New intent namespaces** (set via `Intent.namespace`, filter with
+`list_intents(namespace=...)`):
+
+- `payments` (10): + `list_payments`, `get_payment`, `create_invoice`,
+  `list_invoices`, `create_subscription`, `cancel_subscription`,
+  `get_balance`, `create_payment_link`. `charge_customer` schema extended
+  with `payment_method_id` and `capture_method: "automatic"|"manual"`.
+- `crm` (8): + `find_contact`, `list_contacts`, `create_deal`,
+  `update_deal_stage`, `log_activity`, `create_note`.
+- `commerce` (11): + `get_order`, `create_order`, `update_order`,
+  `fulfill_order`, `refund_order`, `get_tracking`, `list_products`,
+  `get_product`, `update_inventory`.
+- `messaging` (9): `post_message` renamed to `send_message` (old name kept as
+  alias), + `send_sms`, `list_messages`, `list_channels`, `react_to_message`,
+  `update_message`, `delete_message`, `list_users`. Rich-content passthrough
+  via `{format: blockkit|embed|adaptive_card, payload}` — no lossy conversion.
+- `ticket` (10): + `get_ticket`, `search_tickets`, `update_ticket`,
+  `add_comment`, `assign_ticket`, `transition_ticket` (category → provider
+  transition_id), `link_tickets`, `list_projects`.
+- `file` (6, new family): `list_files`, `download_file`, `upload_file`,
+  `get_file_metadata`, `search_files`, `delete_file`.
+- `calendar` (4, new family): `list_events`, `create_event`, `update_event`,
+  `cancel_event`. IANA TZ canonical; RRULE object + `raw_rrule` escape hatch.
+- `pulls` (5, new family): `list_pull_requests`, `get_pull_request`,
+  `comment_on_pull_request`, `submit_review`, `merge_pull_request`.
+- `ci` (2, new family): `list_checks`, `trigger_workflow`.
+- `releases` (1, new family): `create_release`.
+- `analytics` (5, new family): `track_event`, `identify_user`, `query_report`,
+  `query_funnel`, `query_retention`.
+
+**New normalizers** (all preserve `original` exclude=True, same as `Money`):
+
+1. `PostalAddress` — maps Stripe / Shopify / PayPal / HubSpot / Google
+   address shapes to `line1/line2/city/region/postal_code/country_code`.
+   ISO-3166 alpha-2 coercion for 2-letter country codes.
+2. `Phone` — E.164 normalisation with lightweight heuristic parser
+   (no libphonenumber dep).
+3. `Email` — always-lowercase `address`, derived `domain`, preserves
+   `verified`/`primary`/`label` from GitHub/Plaid/Intercom shapes.
+4. `PersonName` — `given`/`family`/`full`/`display`/`is_organization`.
+   Middle/prefix/suffix intentionally live on `original` only.
+5. `FileAttachment` — `url`/`filename`/`mime_type`/`size_bytes`/`sha256`.
+6. `UserRef` — cross-API attribution (`id`/`display_name`/`email`/`avatar_url`).
+7. `Tag` — auto-splits comma strings (Shopify) and dict lists (GitHub
+   labels) into canonical `{name, id, color}`.
+8. `GeoPoint` — detects `{lat,lng}`, `{lat,lon}`, GeoJSON `[lng,lat]`, and
+   `"lat,lng"` strings; validates lat ∈ [-90,90] and lng ∈ [-180,180].
+
+**Breaking changes**: `post_message` is still resolvable via `get_intent`
+(alias) but canonical name is `send_message`. Callers importing the string
+literal should migrate at their convenience; no runtime deprecation warning
+(yet).
+
+996 tests passing (955 existing + 41 new: 7 canonical normalizer suites +
+registry count / namespace / alias assertions).
+
 ## [0.24.0] - 2026-04-22
 
 ### Added — retrospective observability

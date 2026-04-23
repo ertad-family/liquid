@@ -21,6 +21,13 @@ class Intent(BaseModel):
     description: str
     canonical_schema: dict[str, Any]
     category: str = "other"
+    namespace: str = "other"
+    """Family grouping (``payments``, ``crm``, ``commerce``, ``messaging``,
+    ``ticket``, ``file``, ``calendar``, ``pulls``, ``ci``, ``releases``,
+    ``analytics``). Used by ``list_intents(namespace=...)`` for discovery."""
+    aliases: list[str] = []
+    """Alternative names kept for backward-compat. The first rename point
+    is ``post_message`` → ``send_message`` in 0.25.0."""
 
 
 class IntentConfig(BaseModel):
