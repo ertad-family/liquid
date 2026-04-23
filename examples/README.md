@@ -34,6 +34,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 16 | [`16_evolution_signals.py`](16_evolution_signals.py) | `on_evolution` — Deprecation/Sunset/version-drift | 0.22 |
 | 17 | [`17_semantic_recovery.py`](17_semantic_recovery.py) | `on_schema_mismatch` — field-missing / type-mismatch | 0.23 |
 | 18 | [`18_observability.py`](18_observability.py) | `InMemoryEventStore` — "what did the agent do?" queries | 0.24 |
+| 19 | [`19_intent_breadth.py`](19_intent_breadth.py) | 71 canonical intents + 8 new normalizers | 0.25 |
 
 ## Where to go next
 

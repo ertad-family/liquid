@@ -23,19 +23,53 @@ from __future__ import annotations
 
 from typing import Any
 
+from liquid.normalize.canonical import (
+    Email,
+    FileAttachment,
+    GeoPoint,
+    PersonName,
+    Phone,
+    PostalAddress,
+    Tag,
+    UserRef,
+    normalize_email,
+    normalize_file_attachment,
+    normalize_geo_point,
+    normalize_person_name,
+    normalize_phone,
+    normalize_postal_address,
+    normalize_tags,
+    normalize_user_ref,
+)
 from liquid.normalize.datetime import normalize_datetime
 from liquid.normalize.ids import normalize_id
 from liquid.normalize.money import Money, normalize_money
 from liquid.normalize.pagination import PaginationEnvelope, normalize_pagination
 
 __all__ = [
+    "Email",
+    "FileAttachment",
+    "GeoPoint",
     "Money",
     "PaginationEnvelope",
+    "PersonName",
+    "Phone",
+    "PostalAddress",
+    "Tag",
+    "UserRef",
     "normalize_datetime",
+    "normalize_email",
+    "normalize_file_attachment",
+    "normalize_geo_point",
     "normalize_id",
     "normalize_money",
     "normalize_pagination",
+    "normalize_person_name",
+    "normalize_phone",
+    "normalize_postal_address",
     "normalize_response",
+    "normalize_tags",
+    "normalize_user_ref",
 ]
 
 

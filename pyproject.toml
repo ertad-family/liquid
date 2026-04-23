@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.24.0"
+version = "0.25.0"
 description = "Zapier for AI agents. Connect to any API on the fly."
 readme = "README.md"
 license = "AGPL-3.0-only"
