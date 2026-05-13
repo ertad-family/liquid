@@ -46,6 +46,14 @@ import httpx
 from pydantic import BaseModel, Field
 from selectolax.parser import HTMLParser
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _commercial_rents import (
+    guess_kind,
+    is_commercial,
+    lookup_market_yield,
+    lookup_rent,
+)
+
 LICITOR_BASE = "https://www.licitor.com"
 BAN_BASE = "https://api-adresse.data.gouv.fr"
 DVF_BASE = "https://files.data.gouv.fr/geo-dvf/latest/csv"
@@ -92,11 +100,19 @@ class Lot(BaseModel):
     postcode: str | None = None
     population: int | None = None
 
-    # Analysis
+    # Analysis (residential / DVF path)
     n_comparables: int = 0
     median_price_per_m2: float | None = None
     estimated_market_eur: float | None = None
     discount: float | None = None  # 1 - mise_a_prix / estimated_market
+
+    # Analysis (commercial / yield path)
+    commercial_kind: str | None = None  # OFFICE | RETAIL
+    baseline_rent_per_m2: float | None = None  # EUR/m²/year
+    annual_rent_estimate_eur: float | None = None
+    implied_yield: float | None = None  # annual_rent / mise_a_prix
+    market_yield_gate: float | None = None
+
     liquidity_score: float = 0.0
     verdict: str = ""
 
@@ -378,6 +394,19 @@ async def geocode(client: httpx.AsyncClient, lot: Lot) -> None:
     pop = props.get("population")
     if pop is not None:
         lot.population = int(pop)
+    # Address-level BAN results don't carry population -- look it up separately.
+    if lot.population is None and lot.commune:
+        r3 = await client.get(
+            f"{BAN_BASE}/search/",
+            params={"q": lot.commune, "limit": 1, "type": "municipality"},
+            headers={"User-Agent": USER_AGENT},
+            timeout=10.0,
+        )
+        muni_feats = r3.json().get("features") or []
+        if muni_feats:
+            mpop = muni_feats[0]["properties"].get("population")
+            if mpop is not None:
+                lot.population = int(mpop)
 
 
 # --------------------------------------------------------------------------- #
@@ -473,6 +502,20 @@ def analyse(lot: Lot, comparables: list[DVFRow]) -> None:
         if lot.mise_a_prix_eur:
             lot.discount = 1 - lot.mise_a_prix_eur / lot.estimated_market_eur
 
+    # Commercial yield path -- DVF €/m² is unreliable for commercial; price it
+    # off broker-published asking rents and a zone-specific yield gate instead.
+    if is_commercial(lot.type_dvf) and lot.surface_m2:
+        kind = guess_kind(lot.type_label)
+        rent, rent_src = lookup_rent(lot.insee_commune, kind, lot.population)
+        gate, gate_src = lookup_market_yield(lot.insee_commune, lot.population)
+        lot.commercial_kind = kind
+        lot.baseline_rent_per_m2 = rent
+        lot.annual_rent_estimate_eur = rent * lot.surface_m2
+        lot.market_yield_gate = gate
+        if lot.mise_a_prix_eur:
+            lot.implied_yield = lot.annual_rent_estimate_eur / lot.mise_a_prix_eur
+        lot.notes.append(f"commercial: rent={rent_src} gate={gate_src}")
+
     lot.liquidity_score = _liquidity_score(lot)
     lot.verdict = _verdict(lot)
 
@@ -487,6 +530,9 @@ def _liquidity_score(lot: Lot) -> float:
         score += 2.0
     elif lot.type_dvf == "Maison":
         score += 1.5
+    elif is_commercial(lot.type_dvf):
+        # Commercial gets a population-conditioned base; yield bonus added below.
+        score += 1.5 if (lot.population or 0) >= 20_000 else 0.5
     elif lot.type_dvf == "Dépendance":
         score += 0.5
     # Vacant beats occupied.
@@ -494,14 +540,14 @@ def _liquidity_score(lot: Lot) -> float:
         score += 2.0
     elif lot.statut == "occupe":
         score += 0.0
-    # Comparables density.
+    # Comparables density (residential path).
     if lot.n_comparables >= 10:
         score += 1.5
     elif lot.n_comparables >= 5:
         score += 1.0
     elif lot.n_comparables >= 2:
         score += 0.5
-    # Discount.
+    # Discount (residential path).
     if lot.discount is not None:
         if lot.discount >= 0.4:
             score += 1.5
@@ -509,12 +555,45 @@ def _liquidity_score(lot: Lot) -> float:
             score += 1.0
         elif lot.discount >= 0.1:
             score += 0.5
+    # Yield bonus (commercial path).
+    if lot.implied_yield is not None and lot.market_yield_gate is not None:
+        spread = lot.implied_yield - lot.market_yield_gate
+        if spread >= 0.04:  # +400 bps over gate
+            score += 2.0
+        elif spread >= 0.02:
+            score += 1.5
+        elif spread >= 0:
+            score += 1.0
+        elif spread >= -0.01:
+            score += 0.5
     return round(min(score, 10.0), 1)
 
 
 def _verdict(lot: Lot) -> str:
     if lot.mise_a_prix_eur is None:
         return "INCOMPLETE: no mise a prix"
+
+    # Commercial: price-via-yield, not €/m² discount.
+    if is_commercial(lot.type_dvf):
+        if lot.implied_yield is None or lot.market_yield_gate is None:
+            return "NO_BENCH: cannot price (no rent/surface)"
+        spread = lot.implied_yield - lot.market_yield_gate
+        # Cap bid = annual_rent / market_yield, then 15% buffer for fees+margin.
+        if lot.annual_rent_estimate_eur:
+            cap_at_market = lot.annual_rent_estimate_eur / lot.market_yield_gate
+            cap = cap_at_market * 0.85
+        else:
+            cap = 0
+        if lot.liquidity_score >= 6.5 and spread >= 0.02:
+            return (
+                f"BUY-COMM  (yield {lot.implied_yield * 100:.1f}% vs gate "
+                f"{lot.market_yield_gate * 100:.1f}%, cap <= {cap:,.0f} EUR)"
+            )
+        if lot.liquidity_score >= 5 and spread >= 0:
+            return f"REVIEW-COMM (yield {lot.implied_yield * 100:.1f}% at gate)"
+        return "SKIP"
+
+    # Residential.
     if lot.estimated_market_eur is None:
         return "NO_BENCH: cannot price"
     if lot.liquidity_score >= 6.5 and (lot.discount or 0) >= 0.3 and lot.statut == "libre":
