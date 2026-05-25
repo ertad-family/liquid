@@ -2,6 +2,22 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.32.0] - 2026-05-25
+
+### Added — array indexing in the mapping path grammar
+
+Closes the last mapping gap: pulling a scalar out of an array element.
+
+- `_extract_path` now supports `[N]` indices — `capital[0]`, `items[2].name` —
+  alongside the existing `[]` all-items form and dotted nesting. Out-of-range or
+  non-list access raises cleanly (so it's treated as a stale path and recovered
+  by the convergence loop).
+- The mapping proposer is told to index arrays when a scalar target maps to an
+  array source (e.g. `capital[0]`) rather than returning the whole list.
+
+Verified live: REST Countries `capital` (an array `["Ljubljana"]`) now maps to
+the scalar `"Ljubljana"`.
+
 ## [0.31.0] - 2026-05-25
 
 ### Changed — mapping convergence against the live response
