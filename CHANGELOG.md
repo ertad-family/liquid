@@ -2,6 +2,29 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.29.0] - 2026-05-25
+
+### Added — scheme-authenticated probes, path-token & exchange HMAC
+
+Closes the last common auth gaps so request-signing and path-embedded schemes
+connect like everything else.
+
+- **Discovery probes now authenticate with the same scheme used for fetch.**
+  `discover()` builds the credential-derived scheme against a throwaway
+  in-memory vault and applies its `httpx.Auth` to every probe, so HMAC / AWS
+  SigV4 / path-token APIs can be discovered on authed endpoints — not just
+  static header/param schemes.
+- **`PathTokenAuth`** — a secret embedded in the URL path (e.g. Telegram
+  `/bot{token}/getMe`). The token stays in the vault and is injected into the
+  request path at call time, never baked into the stored base URL.
+- **`HMACAuth` extended for exchange-style signing** (Bybit/Binance): new
+  `{api_key}` and `{recv_window}` template placeholders, millisecond
+  timestamps (`timestamp_unit="ms"`), and dedicated api-key / timestamp /
+  recv-window headers emitted alongside the signature.
+
+Verified: Telegram `getMe` end-to-end through the cloud (path token); Bybit
+HMAC signature parity against a reference computation.
+
 ## [0.28.0] - 2026-05-25
 
 ### Added — full auth-scheme coverage (explicit directive + query-param keys)
