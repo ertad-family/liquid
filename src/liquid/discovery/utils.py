@@ -62,30 +62,50 @@ def schema_from_record(record: dict[str, Any] | None) -> dict[str, Any]:
     return {"type": "object", "properties": props}
 
 
+def _looks_like_header(field: str) -> bool:
+    """A credential field whose name doubles as an HTTP header name.
+
+    Convention: a dashed name (``xi-api-key``, ``X-Goog-Api-Key``) or one
+    prefixed ``x-``/``xi-`` is sent as that header verbatim, letting callers
+    target APIs with non-standard key headers without extra config.
+    """
+    return "-" in field or field.lower().startswith(("x-", "xi-"))
+
+
 def build_probe_auth_headers(credentials: dict[str, Any] | None) -> dict[str, str]:
     """Build HTTP headers so discovery can probe auth-walled APIs.
 
-    Many APIs (e.g. cloud providers) return 401 on every endpoint until
-    authenticated and publish no OpenAPI spec — unauthenticated probing finds
-    nothing. Given the same credentials the caller will store, derive a best-
-    effort auth header for probe requests:
+    Many APIs return 401 on every endpoint until authenticated and publish no
+    OpenAPI spec — unauthenticated probing finds nothing. Given the same
+    credentials the caller will store, derive a best-effort auth header for
+    probe requests. The credential **field name** carries the intent:
 
+    - ``username`` + ``password`` → HTTP Basic
     - ``token`` / ``access_token`` / ``bearer`` → ``Authorization: Bearer <v>``
-    - ``api_key`` / ``key`` → ``Authorization: Bearer <v>`` *and* ``X-API-Key``
+    - a header-shaped name (``xi-api-key``, ``x-…``) → that header verbatim
+    - ``api_key`` / ``key`` / ``apikey`` → ``Authorization: Bearer`` *and* ``X-API-Key``
+
+    HMAC / request-signing schemes can't be probed with a static header and are
+    out of scope here (they need per-API signing config).
     """
     if not credentials:
         return {}
-    headers: dict[str, str] = {}
+    creds = {k: v for k, v in credentials.items() if k != "auth"}
+    if creds.get("username") and creds.get("password"):
+        import base64
+
+        token = base64.b64encode(f"{creds['username']}:{creds['password']}".encode()).decode()
+        return {"Authorization": f"Basic {token}"}
     for field in ("token", "access_token", "bearer"):
-        if credentials.get(field):
-            headers["Authorization"] = f"Bearer {credentials[field]}"
-            return headers
+        if creds.get(field):
+            return {"Authorization": f"Bearer {creds[field]}"}
+    for field, value in creds.items():
+        if _looks_like_header(field) and value:
+            return {field: str(value)}
     for field in ("api_key", "key", "apikey"):
-        if credentials.get(field):
-            headers["Authorization"] = f"Bearer {credentials[field]}"
-            headers["X-API-Key"] = str(credentials[field])
-            return headers
-    return headers
+        if creds.get(field):
+            return {"Authorization": f"Bearer {creds[field]}", "X-API-Key": str(creds[field])}
+    return {}
 
 
 def parse_llm_endpoints_response(

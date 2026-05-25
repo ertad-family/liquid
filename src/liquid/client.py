@@ -75,6 +75,34 @@ def _normalize_mappings_to_record(
     return out
 
 
+def _identity_fallback_mappings(
+    mappings: list[FieldMapping],
+    target_model: dict[str, Any],
+    schema: APISchema,
+) -> list[FieldMapping]:
+    """Add identity mappings for target fields the LLM proposer missed.
+
+    Discovery captures a real record's field names in each endpoint's
+    ``response_schema``. When a target field shares its name with a discovered
+    field but the proposer produced no mapping for it (LLM omission, or zero
+    proposals), add a direct ``field → field`` mapping. This makes fetch robust
+    to incomplete LLM mapping without inventing paths that don't exist.
+    """
+    known_fields: set[str] = set()
+    for ep in schema.endpoints:
+        props = (ep.response_schema or {}).get("properties")
+        if isinstance(props, dict):
+            known_fields.update(props.keys())
+    if not known_fields:
+        return mappings
+    mapped_targets = {m.target_field for m in mappings}
+    out = list(mappings)
+    for field in target_model:
+        if field not in mapped_targets and field in known_fields:
+            out.append(FieldMapping(source_path=field, target_field=field, confidence=0.9))
+    return out
+
+
 class Liquid:
     """Main entry point for the Liquid library.
 
@@ -448,6 +476,7 @@ class Liquid:
         if auto_approve and all(m.confidence >= confidence_threshold for m in proposals):
             review.approve_all()
             mappings = _normalize_mappings_to_record(review.finalize(), schema)
+            mappings = _identity_fallback_mappings(mappings, target_model, schema)
             actions = (
                 await self._build_auto_actions(
                     schema,
