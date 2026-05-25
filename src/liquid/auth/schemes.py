@@ -58,6 +58,7 @@ def scheme_from_directive(directive: dict):
         "hmac": HMACAuth,
         "aws_sigv4": AwsSigV4Auth,
         "oauth2": OAuth2Auth,
+        "path_token": PathTokenAuth,
     }
     cls = registry.get(kind)
     if cls is None:
@@ -170,10 +171,21 @@ class HMACAuth(_BaseScheme):
     timestamp_field: str = "timestamp"
     signing_key_field: str = "signing_key"
     output_encoding: Literal["hex", "base64"] = "hex"
+    timestamp_unit: Literal["s", "ms"] = "s"
+    # Exchange-style signing (e.g. Bybit/Binance) folds the API key and a
+    # recv-window into the signed string and sends them as their own headers.
+    # ``{api_key}`` / ``{recv_window}`` are available in ``signing_template``.
+    api_key_field: str | None = None
+    api_key_header: str | None = None
+    recv_window: str | None = None
+    recv_window_header: str | None = None
 
     async def build_httpx_auth(self, vault: Vault, vault_key: str) -> httpx.Auth:
         secret = await vault.get(f"{vault_key}/{self.signing_key_field}")
-        return _HMACRequestAuth(secret.encode("utf-8"), self)
+        api_key = None
+        if self.api_key_field:
+            api_key = await vault.get(f"{vault_key}/{self.api_key_field}")
+        return _HMACRequestAuth(secret.encode("utf-8"), self, api_key)
 
 
 class AwsSigV4Auth(_BaseScheme):
@@ -230,7 +242,24 @@ class OAuth2Auth(_BaseScheme):
         return _OAuth2RequestAuth(vault, vault_key, access, self)
 
 
-AuthScheme = BearerAuth | ApiKeyAuth | BasicAuth | HMACAuth | AwsSigV4Auth | OAuth2Auth
+class PathTokenAuth(_BaseScheme):
+    """Secret embedded in the URL path (e.g. Telegram ``/bot{token}/getMe``).
+
+    The token is rendered into :attr:`template` and inserted into the request
+    path (prefix by default), so callers never bake the secret into the stored
+    base URL — it stays in the vault and is applied at request time.
+    """
+
+    kind: Literal["path_token"] = "path_token"
+    token_field: str = "token"
+    template: str = "/bot{token}"
+
+    async def build_httpx_auth(self, vault: Vault, vault_key: str) -> httpx.Auth:
+        token = await vault.get(f"{vault_key}/{self.token_field}")
+        return _PathTokenRequestAuth(self.template.format(token=token))
+
+
+AuthScheme = BearerAuth | ApiKeyAuth | BasicAuth | HMACAuth | AwsSigV4Auth | OAuth2Auth | PathTokenAuth
 AuthSchemeField = Field(discriminator="kind")
 
 
@@ -260,19 +289,41 @@ class _QueryParamAuth(httpx.Auth):
         yield request
 
 
+class _PathTokenRequestAuth(httpx.Auth):
+    requires_request_body = False
+
+    def __init__(self, segment: str) -> None:
+        self._segment = segment.rstrip("/")
+
+    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
+        path = request.url.path  # decoded path, no query
+        # Idempotent: don't double-insert if the segment is already present.
+        if not path.startswith(self._segment + "/") and path != self._segment:
+            sep = "" if path.startswith("/") else "/"
+            request.url = request.url.copy_with(path=f"{self._segment}{sep}{path}")
+        yield request
+
+
 class _HMACRequestAuth(httpx.Auth):
     requires_request_body = True
 
-    def __init__(self, secret: bytes, cfg: HMACAuth) -> None:
+    def __init__(self, secret: bytes, cfg: HMACAuth, api_key: str | None = None) -> None:
         self._secret = secret
         self._cfg = cfg
+        self._api_key = api_key
 
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
         body_bytes: bytes = request.content or b""
         body = body_bytes.decode("utf-8", errors="replace")
-        timestamp = str(int(time.time()))
+        timestamp = str(int(time.time() * 1000)) if self._cfg.timestamp_unit == "ms" else str(int(time.time()))
+        recv_window = self._cfg.recv_window or ""
+
         if self._cfg.timestamp_header:
             request.headers[self._cfg.timestamp_header] = timestamp
+        if self._cfg.api_key_header and self._api_key:
+            request.headers[self._cfg.api_key_header] = self._api_key
+        if self._cfg.recv_window_header and recv_window:
+            request.headers[self._cfg.recv_window_header] = recv_window
 
         signing_string = self._cfg.signing_template.format(
             method=request.method.upper(),
@@ -280,6 +331,8 @@ class _HMACRequestAuth(httpx.Auth):
             query=request.url.query.decode("ascii") if request.url.query else "",
             body=body,
             timestamp=timestamp,
+            api_key=self._api_key or "",
+            recv_window=recv_window,
         )
         digest = hmac.new(self._secret, signing_string.encode("utf-8"), getattr(hashlib, self._cfg.algorithm))
         if self._cfg.output_encoding == "hex":

@@ -96,6 +96,71 @@ class TestAuthDirective:
         assert scheme.query_param == "key"
 
 
+class TestSigningSchemes:
+    def test_path_token_rewrites_url(self):
+        import asyncio
+
+        import httpx
+
+        from liquid._defaults import InMemoryVault
+        from liquid.auth.schemes import PathTokenAuth
+
+        async def run():
+            vault = InMemoryVault()
+            await vault.store("probe/token", "123:ABC")
+            auth = await PathTokenAuth(template="/bot{token}").build_httpx_auth(vault, "probe")
+            req = httpx.Request("GET", "https://api.telegram.org/getMe")
+            return next(auth.auth_flow(req))
+
+        assert asyncio.run(run()).url.path == "/bot123:ABC/getMe"
+
+    def test_exchange_hmac_signature_parity(self):
+        # Liquid's HMAC signing must match a reference Bybit-style computation.
+        import asyncio
+        import hashlib
+        import hmac as _hmac
+
+        import httpx
+
+        from liquid._defaults import InMemoryVault
+        from liquid.auth.schemes import scheme_from_directive
+
+        async def run():
+            scheme = scheme_from_directive(
+                {
+                    "scheme": "hmac",
+                    "signing_key_field": "secret",
+                    "api_key_field": "api_key",
+                    "api_key_header": "X-BAPI-API-KEY",
+                    "timestamp_header": "X-BAPI-TIMESTAMP",
+                    "timestamp_unit": "ms",
+                    "recv_window": "5000",
+                    "recv_window_header": "X-BAPI-RECV-WINDOW",
+                    "header_name": "X-BAPI-SIGN",
+                    "signing_template": "{timestamp}{api_key}{recv_window}{query}",
+                }
+            )
+            vault = InMemoryVault()
+            await vault.store("probe/secret", "sec")
+            await vault.store("probe/api_key", "KEY")
+            auth = await scheme.build_httpx_auth(vault, "probe")
+            req = httpx.Request("GET", "https://api.bybit.com/v5/account/wallet-balance?accountType=UNIFIED")
+            return next(auth.auth_flow(req))
+
+        signed = asyncio.run(run())
+        ts = signed.headers["X-BAPI-TIMESTAMP"]
+        assert signed.headers["X-BAPI-API-KEY"] == "KEY"
+        assert signed.headers["X-BAPI-RECV-WINDOW"] == "5000"
+        expected = _hmac.new(b"sec", f"{ts}KEY5000accountType=UNIFIED".encode(), hashlib.sha256).hexdigest()
+        assert signed.headers["X-BAPI-SIGN"] == expected
+
+    def test_scheme_from_directive_builds_path_token(self):
+        from liquid.auth.schemes import PathTokenAuth
+
+        scheme = scheme_from_directive({"scheme": "path_token", "template": "/bot{token}"})
+        assert isinstance(scheme, PathTokenAuth)
+
+
 class TestDetectRecordEnvelope:
     def test_named_envelope(self):
         path, rec = detect_record_envelope({"instances": [{"id": 1}], "meta": {"total": 1}})
