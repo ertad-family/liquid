@@ -2,6 +2,28 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.30.0] - 2026-05-25
+
+### Added — transparent self-heal in `fetch`
+
+When an upstream renames or reshapes its fields, an adapter's mappings go stale
+and extraction collapses to nulls. `fetch` now repairs this **inline and
+invisibly**: it measures mapping coverage, and when the adapter looks broken it
+re-derives mappings against the response it just received, re-maps, and returns
+correct data — in the same call. The caller issues a plain `fetch` and never has
+to detect breakage or invoke a repair step.
+
+- `fetch(..., auto_repair=True)` (default on). Triggers only when coverage drops
+  below 0.5, an LLM is configured, and the re-map strictly improves coverage;
+  the in-memory adapter is healed for subsequent calls. Healthy adapters never
+  trigger it (no spurious LLM calls).
+- Re-mapping reuses the proposer + envelope normalization + identity-fallback
+  against a live sample — no re-discovery or re-auth needed for field renames.
+
+Verified live through the cloud: a fully corrupted adapter (every source path
+pointing at a non-existent field) self-heals on a plain MCP `fetch` and returns
+correct data.
+
 ## [0.29.0] - 2026-05-25
 
 ### Added — scheme-authenticated probes, path-token & exchange HMAC
