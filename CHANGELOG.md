@@ -2,6 +2,24 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.33.0] - 2026-05-25
+
+### Added — SSRF guard for outbound traffic (`liquid.runtime.ssrf`)
+
+Liquid fetches caller-supplied URLs server-side — by design the SSRF primitive.
+For hosted/multi-tenant deployments (and agents acting on untrusted input) that
+lets a caller point Liquid at internal services or the cloud metadata endpoint
+(`169.254.169.254`) and read the response back.
+
+- `SSRFGuardTransport` — an `httpx` transport that resolves each request's host
+  and refuses to connect to loopback / private / link-local / reserved /
+  metadata addresses. Covers discovery, fetch, and every redirect hop uniformly.
+- `guarded_transport(local_address=...)` factory; `is_blocked_ip()` helper.
+
+Opt-in: wrap your `Liquid(http_client=...)` transport with it for any
+internet-exposed deployment. Defense-in-depth — pair with network egress
+isolation (a DNS-rebinding race remains across resolve/connect).
+
 ## [0.32.0] - 2026-05-25
 
 ### Added — array indexing in the mapping path grammar
