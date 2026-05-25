@@ -75,6 +75,25 @@ def _normalize_mappings_to_record(
     return out
 
 
+_REPAIR_COVERAGE_FLOOR = 0.5
+
+
+def _mapping_coverage(records: list[dict[str, Any]], mappings: list[FieldMapping]) -> float:
+    """Fraction of (record, mapped-field) cells that came back non-null.
+
+    A healthy adapter scores near 1.0; a stale one (upstream renamed/removed the
+    fields it maps from) collapses toward 0 because every extraction misses.
+    """
+    if not records or not mappings:
+        return 1.0  # nothing to judge → don't trigger repair
+    targets = [m.target_field for m in mappings]
+    cells = len(records) * len(targets)
+    if cells == 0:
+        return 1.0
+    present = sum(1 for r in records for t in targets if r.get(t) is not None)
+    return present / cells
+
+
 def _identity_fallback_mappings(
     mappings: list[FieldMapping],
     target_model: dict[str, Any],
@@ -532,6 +551,7 @@ class Liquid:
         max_tokens: int | None = None,
         include_meta: bool | None = None,
         verbosity: VerbosityLevel = "normal",
+        auto_repair: bool = True,
     ) -> list[dict[str, Any]] | dict[str, Any]:
         """Fetch data through an adapter — the primary way agents get data.
 
@@ -608,6 +628,27 @@ class Liquid:
             mapper = RecordMapper(config.mappings)
             mapped = mapper.map_batch(result.records, ep_path)
             records: list[dict[str, Any]] = [r.mapped_data for r in mapped]
+
+            # Transparent self-heal: if the adapter's mappings have gone stale
+            # (the upstream renamed/reshaped fields, so coverage collapses), the
+            # agent never finds out — re-derive mappings against the live
+            # response we just received and re-map, in this same call.
+            stale = (
+                auto_repair
+                and self.llm is not None
+                and bool(result.records)
+                and _mapping_coverage(records, config.mappings) < _REPAIR_COVERAGE_FLOOR
+            )
+            if stale:
+                new_mappings = await self._rederive_mappings(config, ep_path, result.records)
+                if new_mappings:
+                    remapped = RecordMapper(new_mappings).map_batch(result.records, ep_path)
+                    healed = [r.mapped_data for r in remapped]
+                    if _mapping_coverage(healed, new_mappings) > _mapping_coverage(records, config.mappings):
+                        records = healed
+                        config.mappings = new_mappings  # fix the in-memory adapter
+                        await self._emit_self_heal_event(config, ep_path)
+
             validation_signals = self._validate_response(config, records, ep_path)
 
             await self._record_event(
@@ -1404,6 +1445,53 @@ class Liquid:
             return updated
 
         return review
+
+    async def _rederive_mappings(
+        self,
+        config: AdapterConfig,
+        ep_path: str,
+        raw_records: list[dict[str, Any]],
+    ) -> list[FieldMapping] | None:
+        """Re-map the adapter's target fields against a live response sample.
+
+        Used by transparent self-heal: the records were already fetched, so we
+        re-derive the source paths (the proposer matches target fields to the
+        sample's *current* field names, e.g. ``name`` → ``repo_name`` after a
+        rename) without re-discovering or re-authenticating.
+        """
+        sample = next((r for r in raw_records if isinstance(r, dict) and r), None)
+        if sample is None:
+            return None
+        from liquid.discovery.utils import schema_from_record
+        from liquid.models.schema import APISchema, Endpoint
+
+        target_fields = [m.target_field for m in config.mappings]
+        if not target_fields:
+            return None
+        target_model = {tf: "string" for tf in target_fields}
+        mini = APISchema(
+            source_url=config.schema_.source_url,
+            service_name=config.schema_.service_name,
+            discovery_method="rest_heuristic",
+            endpoints=[Endpoint(path=ep_path, method="GET", response_schema=schema_from_record(sample))],
+            auth=config.schema_.auth,
+        )
+        try:
+            proposals = await self._mapping_proposer.propose(mini, target_model)
+        except Exception:
+            return None
+        mappings = _normalize_mappings_to_record(list(proposals), mini)
+        mappings = _identity_fallback_mappings(mappings, target_model, mini)
+        return mappings or None
+
+    async def _emit_self_heal_event(self, config: AdapterConfig, ep_path: str) -> None:
+        import logging
+
+        logging.getLogger(__name__).info(
+            "self-heal: re-mapped %s %s after detecting stale field mappings",
+            config.schema_.service_name,
+            ep_path,
+        )
 
     async def _emit_repair_event(self, adapter_id: str, diff: SchemaDiff) -> None:
         if self.event_handler:
