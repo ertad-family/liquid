@@ -36,6 +36,7 @@ Each file is standalone: pick whichever feature you want to see and run it.
 | 18 | [`18_observability.py`](18_observability.py) | `InMemoryEventStore` — "what did the agent do?" queries | 0.24 |
 | 19 | [`19_intent_breadth.py`](19_intent_breadth.py) | 71 canonical intents + 8 new normalizers | 0.25 |
 | 20 | [`20_no_llm_runtime.py`](20_no_llm_runtime.py) | `Liquid(llm=None)` — persist adapter, sync forever with no model | 0.26 |
+| 🌐 | [`live_quickstart.py`](live_quickstart.py) | Live discovery of an unseen public API (Open Brewery DB) — needs a real LLM key | 0.34 |
 
 ## Where to go next
 

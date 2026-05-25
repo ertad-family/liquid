@@ -174,6 +174,46 @@ pip install liquid-langchain   # LangChain / LangGraph
 pip install liquid-crewai      # CrewAI
 ```
 
+## See it work — live, no pre-config
+
+Point Liquid at an API it has never seen (no adapter, no OpenAPI spec, no auth)
+and get typed records back. AI is used **once** for discovery + mapping; every
+fetch after is pure HTTP. Runnable end to end —
+[`examples/live_quickstart.py`](examples/live_quickstart.py):
+
+```python
+liquid = Liquid(llm=my_llm, vault=InMemoryVault(), sink=CollectorSink(),
+                registry=InMemoryAdapterRegistry())
+
+adapter = await liquid.get_or_create(
+    url="https://api.openbrewerydb.org/v1/breweries",
+    target_model={"name": "str", "city": "str", "state": "str", "country": "str"},
+    auto_approve=True,
+)
+data = await liquid.fetch(adapter)
+```
+
+Real output (Gemini as the LLM backend):
+
+```text
+Connecting to an API Liquid has never seen:
+  https://api.openbrewerydb.org/v1/breweries
+
+  discovery method : rest_heuristic
+  mapped fields    : ['name', 'city', 'state', 'country']
+  LLM calls so far : 2  (discovery + mapping)
+
+fetch() -> 50 typed records; first 3:
+   {'name': '(405) Brewing Co', 'city': 'Norman', 'state': 'Oklahoma', 'country': 'United States'}
+   {'name': '(512) Brewing Co', 'city': 'Austin', 'state': 'Texas', 'country': 'United States'}
+   {'name': '1 of Us Brewing Company', 'city': 'Mount Pleasant', 'state': 'Wisconsin', 'country': 'United States'}
+
+  LLM calls during fetch : 0
+  LLM calls on 2nd fetch : 0
+```
+
+Two model calls to learn the API, then zero forever. That's the whole pitch.
+
 ## Quick start — LangGraph agent with Shopify
 
 ```python
