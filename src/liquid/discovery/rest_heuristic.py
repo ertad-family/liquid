@@ -42,9 +42,11 @@ class RESTHeuristicDiscovery:
         self,
         llm: LLMBackend,
         http_client: httpx.AsyncClient | None = None,
+        auth_headers: dict[str, str] | None = None,
     ) -> None:
         self.llm = llm
         self._external_client = http_client
+        self.auth_headers = auth_headers or {}
 
     async def discover(self, url: str) -> APISchema | None:
         from liquid.discovery.utils import managed_http_client
@@ -66,23 +68,46 @@ class RESTHeuristicDiscovery:
         client: httpx.AsyncClient,
         base_url: str,
     ) -> list[dict]:
+        from urllib.parse import urlparse
+
         base = base_url.rstrip("/")
         found: list[dict] = []
 
-        all_paths = _PROBE_PATHS + [f"/api/v1{p}" for p in _COMMON_RESOURCE_PATHS]
+        # Probe the caller-supplied URL path first — for auth-walled APIs the
+        # caller usually points us straight at a real resource (e.g.
+        # ``/v2/instances``), which guessed paths would never hit.
+        parsed = urlparse(base)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        given_path = parsed.path or ""
+        candidate_paths = [given_path] if given_path else []
+        candidate_paths += _PROBE_PATHS + [f"/api/v1{p}" for p in _COMMON_RESOURCE_PATHS]
 
-        for path in all_paths:
+        seen: set[str] = set()
+        for path in candidate_paths:
+            if path in seen:
+                continue
+            seen.add(path)
             try:
-                resp = await client.get(f"{base}{path}", timeout=5.0, follow_redirects=True)
+                resp = await client.get(
+                    f"{origin}{path}",
+                    headers=self.auth_headers or None,
+                    timeout=5.0,
+                    follow_redirects=True,
+                )
                 if resp.is_success:
                     content_type = resp.headers.get("content-type", "")
                     if "json" in content_type:
+                        try:
+                            sample = resp.json()
+                        except Exception:
+                            sample = None
                         found.append(
                             {
                                 "path": path,
                                 "status": resp.status_code,
                                 "content_type": content_type,
                                 "body_preview": resp.text[:500],
+                                "sample": sample,
                             }
                         )
             except Exception:
@@ -104,9 +129,12 @@ class RESTHeuristicDiscovery:
                     "Include both read (GET) and write (POST/PUT/PATCH/DELETE) endpoints. "
                     "For write endpoints, include the expected request body schema. "
                     "Respond with a JSON object containing: service_name (string), "
-                    "endpoints (array of {path, method, description, request_schema}), "
+                    "endpoints (array of {path, method, description, request_schema, record_path}), "
                     "auth_type (oauth2|api_key|bearer|basic|custom). "
-                    "request_schema should be a JSON Schema object for write endpoints, null for GET."
+                    "request_schema should be a JSON Schema object for write endpoints, null for GET. "
+                    "record_path is the dot-path to the array of records inside the response "
+                    'body when it is wrapped in an envelope (e.g. for {"instances": [...]} set '
+                    'record_path to "instances"); use null when the body is already a bare array.'
                 ),
             ),
             Message(
@@ -119,12 +147,38 @@ class RESTHeuristicDiscovery:
         return self._parse_llm_response(response.content or "{}", url, probed)
 
     def _parse_llm_response(self, content: str, url: str, probed: list[dict]) -> APISchema:
-        from liquid.discovery.utils import parse_llm_endpoints_response
+        from urllib.parse import urlparse
+
+        from liquid.discovery.utils import (
+            detect_record_envelope,
+            parse_llm_endpoints_response,
+            schema_from_record,
+        )
 
         service_name, endpoints, auth = parse_llm_endpoints_response(content, url, fallback_probes=probed)
 
+        # Ground each endpoint in a real probed sample: derive the envelope key
+        # (record_path) and the record's field shape (response_schema) from
+        # actual data rather than trusting the LLM to guess them.
+        samples = {p["path"]: p.get("sample") for p in probed if p.get("sample") is not None}
+        for ep in endpoints:
+            sample = samples.get(ep.path)
+            if sample is None:
+                continue
+            record_path, record = detect_record_envelope(sample)
+            if record_path and not ep.record_path:
+                ep.record_path = record_path
+            if record and not ep.response_schema:
+                ep.response_schema = schema_from_record(record)
+
+        # Endpoints carry full paths, so the schema base must be the origin
+        # (scheme://host) — otherwise a caller-supplied resource URL like
+        # ``…/v2/instances`` would be concatenated with the endpoint path twice.
+        parsed = urlparse(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else url
+
         return APISchema(
-            source_url=url,
+            source_url=origin,
             service_name=service_name,
             discovery_method="rest_heuristic",
             endpoints=endpoints,

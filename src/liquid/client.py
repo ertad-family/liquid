@@ -48,6 +48,33 @@ if TYPE_CHECKING:
     from liquid.verbosity import VerbosityLevel
 
 
+def _normalize_mappings_to_record(
+    mappings: list[FieldMapping],
+    schema: APISchema,
+) -> list[FieldMapping]:
+    """Strip an envelope prefix from mapping source paths.
+
+    Discovery's selector unwraps enveloped responses (``record_path``) before
+    mapping, so the mapper runs per-record. An LLM proposer, however, often
+    writes paths relative to the whole envelope (e.g. ``instances[].id``). Strip
+    the leading ``{record_path}[].`` / ``{record_path}.`` so the path resolves
+    against a single record.
+    """
+    record_paths = [ep.record_path for ep in schema.endpoints if ep.record_path]
+    if not record_paths:
+        return mappings
+    prefixes = tuple(p for rp in record_paths for p in (f"{rp}[].", f"{rp}."))
+    out: list[FieldMapping] = []
+    for m in mappings:
+        sp = m.source_path
+        for pref in prefixes:
+            if sp.startswith(pref):
+                sp = sp[len(pref) :]
+                break
+        out.append(m.model_copy(update={"source_path": sp}) if sp != m.source_path else m)
+    return out
+
+
 class Liquid:
     """Main entry point for the Liquid library.
 
@@ -205,8 +232,17 @@ class Liquid:
 
         return normalize_response(data, hints=self.normalize_hints)
 
-    async def discover(self, url: str) -> APISchema:
-        """Phase 1: Discover the API at the given URL."""
+    async def discover(self, url: str, credentials: dict[str, Any] | None = None) -> APISchema:
+        """Phase 1: Discover the API at the given URL.
+
+        When ``credentials`` are supplied they are turned into best-effort auth
+        headers so discovery can probe APIs that reject unauthenticated requests
+        (and that publish no OpenAPI spec). The same credentials are later stored
+        by :meth:`get_or_create` for fetch-time auth.
+        """
+        from liquid.discovery.utils import build_probe_auth_headers
+
+        auth_headers = build_probe_auth_headers(credentials)
         client = self._http_client or httpx.AsyncClient()
         try:
             pipeline = DiscoveryPipeline(
@@ -214,7 +250,7 @@ class Liquid:
                     MCPDiscovery(),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
-                    RESTHeuristicDiscovery(llm=self.llm, http_client=client),
+                    RESTHeuristicDiscovery(llm=self.llm, http_client=client, auth_headers=auth_headers),
                     BrowserDiscovery(llm=self.llm),
                 ]
             )
@@ -393,11 +429,16 @@ class Liquid:
                 return config
             return review
 
-        # Step 3: Full discovery (expensive)
-        schema = await self.discover(url)
+        # Step 3: Full discovery (expensive). Credentials, when given, let
+        # discovery probe auth-walled APIs and are stored for fetch-time auth.
+        schema = await self.discover(url, credentials=credentials)
 
+        auth_scheme = None
         if credentials:
             auth_ref = await self.store_credentials(schema.service_name, credentials)
+            from liquid.auth.schemes import scheme_from_credentials
+
+            auth_scheme = scheme_from_credentials(schema.auth.type, credentials)
         else:
             auth_ref = f"liquid/{schema.service_name}"
 
@@ -406,11 +447,12 @@ class Liquid:
 
         if auto_approve and all(m.confidence >= confidence_threshold for m in proposals):
             review.approve_all()
+            mappings = _normalize_mappings_to_record(review.finalize(), schema)
             actions = (
                 await self._build_auto_actions(
                     schema,
                     action_model or target_model,
-                    review.finalize(),
+                    mappings,
                     confidence_threshold,
                 )
                 if include_actions
@@ -419,9 +461,10 @@ class Liquid:
             config = AdapterConfig(
                 schema=schema,
                 auth_ref=auth_ref,
-                mappings=review.finalize(),
+                mappings=mappings,
                 sync=SyncConfig(endpoints=[ep.path for ep in schema.endpoints]),
                 actions=actions,
+                auth_scheme=auth_scheme,
             )
             await self.registry.save(config, target_key)
             return config
@@ -489,9 +532,12 @@ class Liquid:
 
         t0 = _time.perf_counter()
         async with managed_http_client(self._http_client) as client:
+            from liquid.sync.selector import EnvelopeSelector
+
             fetcher = Fetcher(
                 http_client=client,
                 vault=self.vault,
+                selector=EnvelopeSelector(target_ep.record_path),
                 cache=cache_store,
                 adapter_id=config.config_id,
                 cache_ttl_override=cache_ttl_override,
