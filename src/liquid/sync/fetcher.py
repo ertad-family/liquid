@@ -14,6 +14,7 @@ from liquid.exceptions import (
     Recovery,
     ServiceDownError,
     ToolCall,
+    VaultError,
 )
 from liquid.models.schema import Endpoint  # noqa: TC001
 from liquid.sync.pagination import NoPagination, PaginationStrategy
@@ -113,8 +114,14 @@ class Fetcher:
         if auth_scheme is not None:
             auth = await auth_scheme.build_httpx_auth(self.vault, auth_ref)
         else:
-            auth_value = await self.vault.get(auth_ref)
-            headers["Authorization"] = f"Bearer {auth_value}"
+            # Default bearer from the vault. Public/no-auth APIs have no stored
+            # credential — fall back to an unauthenticated request rather than
+            # failing the fetch.
+            try:
+                auth_value = await self.vault.get(auth_ref)
+                headers["Authorization"] = f"Bearer {auth_value}"
+            except VaultError:
+                pass
 
         url = f"{base_url.rstrip('/')}{endpoint.path}"
 
@@ -129,6 +136,7 @@ class Fetcher:
             params=params,
             headers=headers,
             auth=auth,
+            follow_redirects=True,
         )
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
