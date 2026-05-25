@@ -75,9 +75,6 @@ def _normalize_mappings_to_record(
     return out
 
 
-_REPAIR_COVERAGE_FLOOR = 0.5
-
-
 def _mapping_coverage(records: list[dict[str, Any]], mappings: list[FieldMapping]) -> float:
     """Fraction of (record, mapped-field) cells that came back non-null.
 
@@ -92,6 +89,29 @@ def _mapping_coverage(records: list[dict[str, Any]], mappings: list[FieldMapping
         return 1.0
     present = sum(1 for r in records for t in targets if r.get(t) is not None)
     return present / cells
+
+
+def _path_exists(sample: dict[str, Any], path: str) -> bool:
+    """Whether ``path`` resolves in ``sample`` (the key chain is present).
+
+    Distinguishes a *stale/hallucinated* path (missing key → KeyError) from a
+    field that is simply ``null`` in this record (present key, null value) — the
+    former is a mapping error to fix, the latter is just data.
+    """
+    from liquid.sync.mapper import _extract_path
+
+    try:
+        _extract_path(sample, path)
+    except KeyError:
+        return False
+    except Exception:
+        return True  # unusual shape — don't treat as broken
+    return True
+
+
+def _has_broken_mappings(mappings: list[FieldMapping], sample: dict[str, Any]) -> bool:
+    """True if any mapping points at a path that doesn't exist in the live record."""
+    return any(not _path_exists(sample, m.source_path) for m in mappings)
 
 
 def _identity_fallback_mappings(
@@ -629,22 +649,19 @@ class Liquid:
             mapped = mapper.map_batch(result.records, ep_path)
             records: list[dict[str, Any]] = [r.mapped_data for r in mapped]
 
-            # Transparent self-heal: if the adapter's mappings have gone stale
-            # (the upstream renamed/reshaped fields, so coverage collapses), the
-            # agent never finds out — re-derive mappings against the live
-            # response we just received and re-map, in this same call.
-            stale = (
-                auto_repair
-                and self.llm is not None
-                and bool(result.records)
-                and _mapping_coverage(records, config.mappings) < _REPAIR_COVERAGE_FLOOR
-            )
-            if stale:
-                new_mappings = await self._rederive_mappings(config, ep_path, result.records)
-                if new_mappings:
+            # Transparent self-heal / convergence: validate the mappings against
+            # the live response we just received. A source path that does not
+            # exist in the real data (a hallucinated or stale path) is dropped
+            # and recovered (identity match, then a focused LLM re-map shown the
+            # real record). Mappings thus converge to correct over real calls —
+            # the agent issues a plain fetch and never sees the repair.
+            sample = next((r for r in result.records if isinstance(r, dict) and r), None)
+            if auto_repair and sample is not None and _has_broken_mappings(config.mappings, sample):
+                new_mappings = await self._converge_mappings(ep_path, config.mappings, sample)
+                if new_mappings and new_mappings != config.mappings:
                     remapped = RecordMapper(new_mappings).map_batch(result.records, ep_path)
                     healed = [r.mapped_data for r in remapped]
-                    if _mapping_coverage(healed, new_mappings) > _mapping_coverage(records, config.mappings):
+                    if _mapping_coverage(healed, new_mappings) >= _mapping_coverage(records, config.mappings):
                         records = healed
                         config.mappings = new_mappings  # fix the in-memory adapter
                         await self._emit_self_heal_event(config, ep_path)
@@ -1446,43 +1463,75 @@ class Liquid:
 
         return review
 
-    async def _rederive_mappings(
+    async def _converge_mappings(
         self,
-        config: AdapterConfig,
         ep_path: str,
-        raw_records: list[dict[str, Any]],
+        mappings: list[FieldMapping],
+        sample: dict[str, Any],
     ) -> list[FieldMapping] | None:
-        """Re-map the adapter's target fields against a live response sample.
+        """Reconcile mappings with a live record — the convergence loop.
 
-        Used by transparent self-heal: the records were already fetched, so we
-        re-derive the source paths (the proposer matches target fields to the
-        sample's *current* field names, e.g. ``name`` → ``repo_name`` after a
-        rename) without re-discovering or re-authenticating.
+        1. Keep mappings whose source path *exists* in the real record.
+        2. For the now-unmapped target fields, add an identity mapping when the
+           field name is a top-level key in the record (recovers hallucinated
+           paths like SpaceX's ``/v2.project_name`` → ``name``).
+        3. For fields still unmapped (renamed or nested, e.g. ``name.common``),
+           ask the LLM once, **showing it the actual record**, and keep only the
+           proposals whose path resolves.
+
+        Returns the reconciled mappings, or ``None`` to leave the adapter as-is.
         """
-        sample = next((r for r in raw_records if isinstance(r, dict) and r), None)
-        if sample is None:
-            return None
-        from liquid.discovery.utils import schema_from_record
-        from liquid.models.schema import APISchema, Endpoint
+        targets = [m.target_field for m in mappings]
+        good = [m for m in mappings if _path_exists(sample, m.source_path)]
+        mapped = {m.target_field for m in good}
+        missing = [t for t in targets if t not in mapped]
 
-        target_fields = [m.target_field for m in config.mappings]
-        if not target_fields:
-            return None
-        target_model = {tf: "string" for tf in target_fields}
-        mini = APISchema(
-            source_url=config.schema_.source_url,
-            service_name=config.schema_.service_name,
-            discovery_method="rest_heuristic",
-            endpoints=[Endpoint(path=ep_path, method="GET", response_schema=schema_from_record(sample))],
-            auth=config.schema_.auth,
-        )
-        try:
-            proposals = await self._mapping_proposer.propose(mini, target_model)
-        except Exception:
-            return None
-        mappings = _normalize_mappings_to_record(list(proposals), mini)
-        mappings = _identity_fallback_mappings(mappings, target_model, mini)
-        return mappings or None
+        for field in list(missing):
+            if field in sample and sample[field] is not None:
+                good.append(FieldMapping(source_path=field, target_field=field, confidence=0.9))
+                missing.remove(field)
+
+        if missing and self.llm is not None:
+            try:
+                proposed = await self._propose_for_fields(ep_path, missing, sample)
+            except Exception:
+                proposed = []
+            for m in proposed:
+                if m.target_field in missing and _path_exists(sample, m.source_path):
+                    good.append(m)
+                    missing.remove(m.target_field)
+
+        return good or None
+
+    async def _propose_for_fields(
+        self,
+        ep_path: str,
+        fields: list[str],
+        sample: dict[str, Any],
+    ) -> list[FieldMapping]:
+        """Focused re-map: ask the LLM for source paths for specific target
+        fields, given a *real* record so it can resolve renamed/nested paths."""
+        import json as _json
+
+        from liquid.models.llm import Message
+
+        messages = [
+            Message(
+                role="system",
+                content=(
+                    "Map each requested target field to a dot-notation source_path that exists "
+                    "in the given JSON record. Use nested paths like 'name.common' and 'a.b.c'. "
+                    "Respond ONLY with a JSON array of {source_path, target_field}. Omit a field "
+                    "if no matching source exists."
+                ),
+            ),
+            Message(
+                role="user",
+                content=(f"Record:\n{_json.dumps(sample)[:1500]}\n\nTarget fields needing a source_path: {fields}"),
+            ),
+        ]
+        resp = await self.llm.chat(messages)
+        return self._mapping_proposer._parse_mappings(resp.content or "[]")
 
     async def _emit_self_heal_event(self, config: AdapterConfig, ep_path: str) -> None:
         import logging
