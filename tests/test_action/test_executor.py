@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from liquid.action.executor import ActionExecutor
@@ -397,6 +399,15 @@ def _make_mcp_action(**kwargs) -> ActionConfig:
 
 @pytest.mark.asyncio
 class TestMCPExecution:
+    @pytest.fixture(autouse=True)
+    def _force_http_fallback(self, monkeypatch):
+        # These cover the HTTP fallback (POST /mcp/tools/...), which uses the
+        # injected httpx client and so can be driven by MockTransport. Make the
+        # native MCP SDK import fail so this path is taken regardless of whether
+        # the `mcp` package happens to be installed in the test environment
+        # (the native path bypasses the injected client and can't be mocked).
+        monkeypatch.setitem(sys.modules, "mcp", None)
+
     async def test_mcp_http_fallback_success(self):
         """When MCP SDK is not available, falls back to HTTP POST."""
         import httpx
