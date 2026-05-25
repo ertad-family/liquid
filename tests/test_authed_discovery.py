@@ -8,9 +8,18 @@ mapping normalization against a discovered record_path.
 
 from __future__ import annotations
 
-from liquid.auth.schemes import ApiKeyAuth, BasicAuth, BearerAuth, scheme_from_credentials
+from liquid.auth.schemes import (
+    ApiKeyAuth,
+    AwsSigV4Auth,
+    BasicAuth,
+    BearerAuth,
+    HMACAuth,
+    scheme_from_credentials,
+    scheme_from_directive,
+)
 from liquid.client import _identity_fallback_mappings, _normalize_mappings_to_record
 from liquid.discovery.utils import (
+    build_probe_auth,
     build_probe_auth_headers,
     detect_record_envelope,
     schema_from_record,
@@ -46,6 +55,45 @@ class TestProbeAuthHeaders:
     def test_empty(self):
         assert build_probe_auth_headers(None) == {}
         assert build_probe_auth_headers({}) == {}
+
+
+class TestAuthDirective:
+    def test_query_param_key_goes_to_params(self):
+        h, p = build_probe_auth({"api_key": "k", "auth": {"scheme": "api_key", "query_param": "key"}})
+        assert h == {}
+        assert p == {"key": "k"}
+
+    def test_custom_header_via_directive(self):
+        h, p = build_probe_auth({"k": "v", "auth": {"scheme": "api_key", "header_name": "X-Foo", "key_field": "k"}})
+        assert h == {"X-Foo": "v"}
+        assert p == {}
+
+    def test_bearer_directive_with_prefix(self):
+        creds = {"t": "abc", "auth": {"scheme": "bearer", "token_field": "t", "header_prefix": "Token "}}
+        h, _ = build_probe_auth(creds)
+        assert h == {"Authorization": "Token abc"}
+
+    def test_hmac_directive_has_no_static_probe_auth(self):
+        # signed per-request → discovery relies on public endpoints
+        assert build_probe_auth({"secret": "s", "auth": {"scheme": "hmac"}}) == ({}, {})
+
+    def test_scheme_from_directive_builds_each_kind(self):
+        assert isinstance(scheme_from_directive({"scheme": "api_key", "query_param": "key"}), ApiKeyAuth)
+        assert isinstance(scheme_from_directive({"scheme": "hmac", "signing_key_field": "secret"}), HMACAuth)
+        assert isinstance(
+            scheme_from_directive({"scheme": "aws_sigv4", "region": "us-east-1", "service": "s3"}),
+            AwsSigV4Auth,
+        )
+
+    def test_scheme_from_directive_rejects_bad(self):
+        assert scheme_from_directive({"scheme": "nope"}) is None
+        assert scheme_from_directive({"scheme": "aws_sigv4"}) is None  # missing required region/service
+
+    def test_directive_wins_in_scheme_from_credentials(self):
+        creds = {"api_key": "k", "auth": {"scheme": "api_key", "query_param": "key"}}
+        scheme = scheme_from_credentials("custom", creds)
+        assert isinstance(scheme, ApiKeyAuth)
+        assert scheme.query_param == "key"
 
 
 class TestDetectRecordEnvelope:

@@ -268,9 +268,9 @@ class Liquid:
         (and that publish no OpenAPI spec). The same credentials are later stored
         by :meth:`get_or_create` for fetch-time auth.
         """
-        from liquid.discovery.utils import build_probe_auth_headers
+        from liquid.discovery.utils import build_probe_auth
 
-        auth_headers = build_probe_auth_headers(credentials)
+        auth_headers, auth_params = build_probe_auth(credentials)
         client = self._http_client or httpx.AsyncClient()
         try:
             pipeline = DiscoveryPipeline(
@@ -278,7 +278,12 @@ class Liquid:
                     MCPDiscovery(),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
-                    RESTHeuristicDiscovery(llm=self.llm, http_client=client, auth_headers=auth_headers),
+                    RESTHeuristicDiscovery(
+                        llm=self.llm,
+                        http_client=client,
+                        auth_headers=auth_headers,
+                        auth_params=auth_params,
+                    ),
                     BrowserDiscovery(llm=self.llm),
                 ]
             )

@@ -43,10 +43,12 @@ class RESTHeuristicDiscovery:
         llm: LLMBackend,
         http_client: httpx.AsyncClient | None = None,
         auth_headers: dict[str, str] | None = None,
+        auth_params: dict[str, str] | None = None,
     ) -> None:
         self.llm = llm
         self._external_client = http_client
         self.auth_headers = auth_headers or {}
+        self.auth_params = auth_params or {}
 
     async def discover(self, url: str) -> APISchema | None:
         from liquid.discovery.utils import managed_http_client
@@ -91,6 +93,7 @@ class RESTHeuristicDiscovery:
                 resp = await client.get(
                     f"{origin}{path}",
                     headers=self.auth_headers or None,
+                    params=self.auth_params or None,
                     timeout=5.0,
                     follow_redirects=True,
                 )
