@@ -2,6 +2,20 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.30.2] - 2026-05-25
+
+### Fixed
+- **Tolerate mislabeled JSON during discovery.** A probe whose body parses as
+  JSON is accepted even when the API sets a wrong `content-type` (JSON served
+  as `text/html` — common). Unblocks APIs like Advice Slip and CoinLore.
+- **Don't mistake an object's list field for an envelope.** Envelope
+  auto-detect treats an unnamed list key as the record array only when it holds
+  objects; a single object that merely has an (empty) list field (e.g. Chuck
+  Norris's `categories: []`) is the record itself.
+
+Result of an open-API sweep: 16/16 unfamiliar public APIs discover + map + fetch
+real data on the fly.
+
 ## [0.30.1] - 2026-05-25
 
 ### Fixed
