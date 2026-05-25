@@ -2,6 +2,28 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.31.0] - 2026-05-25
+
+### Changed — mapping convergence against the live response
+
+`fetch`'s self-heal is now driven by **path validation against real data** and
+runs as a feedback loop:
+
+- A mapping whose `source_path` does **not exist** in the live record (a
+  hallucinated or stale path, e.g. an LLM mapping `name` → `/v2.project_name`
+  while `name` sits at top level) is dropped — distinguished from a field that
+  is merely `null` in the data, which is left untouched.
+- Dropped/unmapped target fields are recovered first by **identity** (top-level
+  name match — no LLM), then by a **focused LLM re-map shown the real record**,
+  so it can resolve renamed or nested paths (e.g. `name.common`). Only proposals
+  whose path actually resolves are kept.
+- Because this runs on every fetch against the real response, mappings
+  **converge to correct over real calls**. Healthy adapters never trigger it.
+
+**Known limit:** extracting a scalar from an array element (e.g. `capital[0]`)
+needs path-grammar indexing, which isn't supported yet — such fields are left
+unmapped rather than mis-mapped.
+
 ## [0.30.2] - 2026-05-25
 
 ### Fixed
