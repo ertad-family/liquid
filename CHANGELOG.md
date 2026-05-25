@@ -2,6 +2,35 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.26.0] - 2026-05-25
+
+### Added — authed discovery + enveloped fetch for spec-less / auth-walled APIs
+
+Liquid can now connect to APIs that publish **no OpenAPI spec and require auth
+on every endpoint** (e.g. cloud-provider APIs like Vultr) — the kind of ad-hoc
+API no connector was ever written for. Previously discovery probed
+unauthenticated, hit 401 everywhere, and bailed with "no discovery strategy
+could handle"; and even with an adapter in hand, fetch could not reach the
+stored credential.
+
+- `discover(url, credentials=...)` derives best-effort probe auth headers so
+  discovery can see auth-walled endpoints. The REST heuristic now also probes
+  the **caller-supplied URL path** (e.g. `/v2/instances`), not only guessed
+  paths.
+- `record_path` and a record-shaped `response_schema` are inferred from a real
+  probed sample. A new `EnvelopeSelector` auto-detects the record array in
+  provider envelopes like `{"instances": [...], "meta": {...}}` and is used by
+  both `fetch` and the page-walker.
+- `get_or_create` attaches an `auth_scheme` derived from the supplied
+  credentials, so fetch-time auth lines up with how `store_credentials`
+  persisted them (fixes the flat `vault.get(auth_ref)` vs `{auth_ref}/{field}`
+  mismatch that left enveloped/authed fetches unauthenticated).
+- LLM-proposed mapping paths are normalized against `record_path`, so
+  envelope-relative paths (`instances[].id`) resolve per-record after
+  unwrapping.
+
+New `Endpoint.record_path` field. Adds `tests/test_authed_discovery.py`.
+
 ## [0.25.0] - 2026-04-23
 
 ### Added — intent + normalizer breadth (research-backed)
