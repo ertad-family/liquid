@@ -307,7 +307,8 @@ In-memory implementations ship for all of them. `liquid-cloud` provides `Postgre
 
 ## Documentation
 
-- [Quickstart](docs/QUICKSTART.md)
+- [Quickstart](docs/QUICKSTART.md) — discover → map → fetch, plus the **no-LLM runtime**
+- [OSS vs. Cloud](docs/OSS-VS-CLOUD.md) — the honest boundary: what's free/self-hosted vs. hosted
 - [Architecture](docs/ARCHITECTURE.md)
 - [Extending](docs/EXTENDING.md) — implement your own Vault / LLM / Sink
 - [Write operations spec](docs/SPEC-WRITE-OPERATIONS.md)

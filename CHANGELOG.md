@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.34.0] - 2026-05-25
+
+### Added — first-class no-LLM runtime
+
+AI participates only at setup (discovery + mapping). This release makes the
+"discover once, sync forever without a model" path explicit and documented:
+
+- **`Liquid(llm=None)` is now first-class.** The constructor's `llm` parameter
+  is typed `LLMBackend | None`. Build Liquid with no model, reload a persisted
+  `AdapterConfig`, and `fetch`/`search`/`aggregate` run as pure deterministic
+  HTTP + transforms — no per-call provider cost. The convergence/self-heal step
+  still works without an LLM (drops stale paths, recovers identity matches) and
+  only escalates to the model if one is provided.
+- **[`examples/20_no_llm_runtime.py`](examples/20_no_llm_runtime.py)** — a
+  self-contained, offline-runnable demo (mock transport, no keys) of persist →
+  reload → fetch with `llm=None`, including nested-path extraction.
+- **[`docs/OSS-VS-CLOUD.md`](docs/OSS-VS-CLOUD.md)** — the honest boundary
+  between the open-source library and the hosted service: the whole engine is
+  OSS; Cloud adds persistence, the pre-built catalog, measured rate-limit data,
+  billing, and multi-tenant isolation.
+- **`docs/QUICKSTART.md`** — new "No-LLM runtime" section.
+
+Tests: `tests/test_no_llm_fetch.py` proves fetch, JSON round-trip of the config,
+and identity self-heal all work with `llm=None`.
+
 ## [0.33.0] - 2026-05-25
 
 ### Added — SSRF guard for outbound traffic (`liquid.runtime.ssrf`)
