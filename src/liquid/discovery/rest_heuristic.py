@@ -96,11 +96,13 @@ class RESTHeuristicDiscovery:
                 )
                 if resp.is_success:
                     content_type = resp.headers.get("content-type", "")
-                    if "json" in content_type:
-                        try:
-                            sample = resp.json()
-                        except Exception:
-                            sample = None
+                    # Accept anything that *parses* as JSON, even when the API
+                    # mislabels it (e.g. JSON served as text/html — common).
+                    try:
+                        sample = resp.json()
+                    except Exception:
+                        sample = None
+                    if isinstance(sample, dict | list):
                         found.append(
                             {
                                 "path": path,

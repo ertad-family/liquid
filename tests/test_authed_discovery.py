@@ -239,6 +239,16 @@ class TestEnvelopeSelector:
     def test_single_object(self):
         assert EnvelopeSelector().select({"id": 1}) == [{"id": 1}]
 
+    def test_single_object_with_empty_list_field(self):
+        # Chuck Norris case: a record that merely *has* an empty list field is
+        # itself the record — the list is not the envelope.
+        obj = {"value": "joke", "id": "x", "categories": []}
+        assert EnvelopeSelector().select(obj) == [obj]
+
+    def test_single_object_with_scalar_list_field(self):
+        obj = {"id": 1, "tags": ["a", "b"]}  # tags is scalars, not records
+        assert EnvelopeSelector().select(obj) == [obj]
+
 
 class TestNormalizeMappings:
     def _schema_with_record_path(self, rp: str | None) -> APISchema:

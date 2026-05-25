@@ -45,10 +45,17 @@ def detect_record_envelope(sample: Any) -> tuple[str | None, dict[str, Any] | No
             value = sample.get(key)
             if isinstance(value, list):
                 return key, (value[0] if value and isinstance(value[0], dict) else None)
-        list_keys = [k for k, v in sample.items() if isinstance(v, list) and k not in _ENVELOPE_META_KEYS]
+        # Only treat an unnamed list key as the record array if it actually
+        # holds objects — a single object that merely *has* an (empty) list
+        # field (e.g. Chuck Norris's ``categories: []``) is the record itself.
+        list_keys = [
+            k
+            for k, v in sample.items()
+            if isinstance(v, list) and v and isinstance(v[0], dict) and k not in _ENVELOPE_META_KEYS
+        ]
         if len(list_keys) == 1:
             value = sample[list_keys[0]]
-            return list_keys[0], (value[0] if value and isinstance(value[0], dict) else None)
+            return list_keys[0], value[0]
         return None, sample
     return None, None
 

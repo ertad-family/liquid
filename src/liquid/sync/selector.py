@@ -61,7 +61,14 @@ class EnvelopeSelector(RecordSelector):
                 value = data.get(key)
                 if isinstance(value, list):
                     return value
-            list_keys = [k for k, v in data.items() if isinstance(v, list) and k not in self._META_KEYS]
+            # Only an unnamed list of *objects* counts as the record array;
+            # a single object that merely has an (empty) list field is itself
+            # the record.
+            list_keys = [
+                k
+                for k, v in data.items()
+                if isinstance(v, list) and v and isinstance(v[0], dict) and k not in self._META_KEYS
+            ]
             if len(list_keys) == 1:
                 return data[list_keys[0]]
             return [data]
