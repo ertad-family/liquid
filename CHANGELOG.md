@@ -2,6 +2,15 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.30.1] - 2026-05-25
+
+### Fixed
+- **No-auth public APIs now fetch.** A public adapter has no stored credential;
+  the default bearer path raised `VaultError`. Fetch now falls back to an
+  unauthenticated request when no token is present.
+- **Follow redirects on the data fetch** (discovery already did), so APIs that
+  301 to a new host (e.g. `frankfurter.app` → `frankfurter.dev`) resolve.
+
 ## [0.30.0] - 2026-05-25
 
 ### Added — transparent self-heal in `fetch`
