@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.27.0] - 2026-05-25
+
+### Added — auth breadth + identity-fallback mappings
+
+Follow-ups to 0.26.0, found by sweeping real keys across many APIs.
+
+**Auth breadth** — the credential **field name** now carries the auth intent,
+so more APIs connect with no extra config:
+- `username` + `password` → HTTP Basic (both for discovery probing and the
+  stored `BasicAuth` scheme).
+- a header-shaped field name (e.g. `xi-api-key`, `x-…`) → sent as that header
+  verbatim (`ApiKeyAuth(header_name=field)`), unblocking APIs with
+  non-standard key headers.
+- `token`/`bearer` and `api_key`/`X-API-Key` as before.
+- The reserved `auth` key in credentials is ignored as a value.
+
+HMAC / request-signing schemes remain out of scope for zero-config discovery
+(they need per-API signing configuration).
+
+**Mapping completeness** — `_identity_fallback_mappings` adds `field → field`
+mappings for target fields the LLM proposer omitted, when the field name exists
+in the discovered `response_schema`. Fixes endpoints where the proposer
+returned partial or zero mappings (and single-object responses) — fetch no
+longer depends on the LLM mapping every requested field.
+
 ## [0.26.0] - 2026-05-25
 
 ### Added — authed discovery + enveloped fetch for spec-less / auth-walled APIs
