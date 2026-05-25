@@ -64,6 +64,11 @@ class Endpoint(BaseModel):
     response_schema: dict[str, Any] = Field(default_factory=dict)
     pagination: PaginationType | None = None
     idempotency_header: str | None = None
+    record_path: str | None = None
+    """Dot-path to the record array inside the response envelope (e.g.
+    ``"instances"`` for ``{"instances": [...]}``). ``None`` means the response
+    is a bare list or single object. Discovery infers this; fetch uses it to
+    unwrap enveloped payloads before mapping."""
 
 
 class AuthRequirement(BaseModel):

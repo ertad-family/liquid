@@ -25,7 +25,7 @@ from liquid.sync.pagination import (
     PageNumberPagination,
     PaginationStrategy,
 )
-from liquid.sync.selector import RecordSelector
+from liquid.sync.selector import EnvelopeSelector
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -35,25 +35,9 @@ if TYPE_CHECKING:
     from liquid.models.schema import Endpoint
 
 
-class _EnvelopeAwareSelector(RecordSelector):
-    """Extract records from common pagination envelopes.
-
-    If the payload is a bare list, return it. If it's a dict, try the two
-    conventional envelope keys (``data``, ``results``) before falling back
-    to the single-record interpretation. Mirrors the logic in
-    :func:`liquid.sync.pagination._has_full_page`.
-    """
-
-    def select(self, data):  # type: ignore[override]
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            for key in ("data", "results", "items"):
-                value = data.get(key)
-                if isinstance(value, list):
-                    return value
-            return [data]
-        return []
+# Envelope handling lives in the shared selector now; kept as an alias so the
+# page-walker and ``Liquid.fetch`` unwrap responses identically.
+_EnvelopeAwareSelector = EnvelopeSelector
 
 
 def _strategy_for(endpoint: Endpoint) -> PaginationStrategy:
@@ -108,7 +92,7 @@ async def _walk_pages(
             http_client=client,
             vault=liquid.vault,
             pagination=pagination,
-            selector=_EnvelopeAwareSelector(),
+            selector=_EnvelopeAwareSelector(target_ep.record_path),
             adapter_id=config.config_id,
             rate_limiter=liquid.rate_limiter,
             telemetry=liquid.telemetry,
