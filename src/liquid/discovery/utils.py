@@ -72,25 +72,8 @@ def _looks_like_header(field: str) -> bool:
     return "-" in field or field.lower().startswith(("x-", "xi-"))
 
 
-def build_probe_auth_headers(credentials: dict[str, Any] | None) -> dict[str, str]:
-    """Build HTTP headers so discovery can probe auth-walled APIs.
-
-    Many APIs return 401 on every endpoint until authenticated and publish no
-    OpenAPI spec — unauthenticated probing finds nothing. Given the same
-    credentials the caller will store, derive a best-effort auth header for
-    probe requests. The credential **field name** carries the intent:
-
-    - ``username`` + ``password`` → HTTP Basic
-    - ``token`` / ``access_token`` / ``bearer`` → ``Authorization: Bearer <v>``
-    - a header-shaped name (``xi-api-key``, ``x-…``) → that header verbatim
-    - ``api_key`` / ``key`` / ``apikey`` → ``Authorization: Bearer`` *and* ``X-API-Key``
-
-    HMAC / request-signing schemes can't be probed with a static header and are
-    out of scope here (they need per-API signing config).
-    """
-    if not credentials:
-        return {}
-    creds = {k: v for k, v in credentials.items() if k != "auth"}
+def _infer_probe_headers(creds: dict[str, Any]) -> dict[str, str]:
+    """Best-effort probe headers from credential field-name conventions."""
     if creds.get("username") and creds.get("password"):
         import base64
 
@@ -106,6 +89,67 @@ def build_probe_auth_headers(credentials: dict[str, Any] | None) -> dict[str, st
         if creds.get(field):
             return {"Authorization": f"Bearer {creds[field]}", "X-API-Key": str(creds[field])}
     return {}
+
+
+def build_probe_auth(credentials: dict[str, Any] | None) -> tuple[dict[str, str], dict[str, str]]:
+    """Return ``(headers, query_params)`` to authenticate discovery probes.
+
+    Many APIs return 401 on every endpoint until authenticated and publish no
+    OpenAPI spec — unauthenticated probing finds nothing. Given the credentials
+    the caller will also store, produce probe auth two ways:
+
+    1. **Explicit directive** — a reserved ``auth`` dict in credentials, e.g.
+       ``{"api_key": "k", "auth": {"scheme": "api_key", "query_param": "key"}}``
+       or ``{"auth": {"scheme": "bearer", "token_field": "token"}}``. This maps
+       onto any supported scheme, including query-param keys. (HMAC / SigV4 sign
+       per-request and can't be pre-applied to a probe → no probe auth; rely on
+       the API's public endpoints for discovery.)
+    2. **Inference** — when no directive is given, derive headers from credential
+       field-name conventions (basic, bearer, header-shaped name, api key).
+    """
+    if not credentials:
+        return {}, {}
+    creds = {k: v for k, v in credentials.items() if k != "auth"}
+    directive = credentials.get("auth")
+    if isinstance(directive, dict):
+        kind = directive.get("scheme") or directive.get("kind")
+
+        def _val(default_field: str, field_key: str = "field") -> Any:
+            field = directive.get(field_key, default_field)
+            return creds.get(field) if creds.get(field) is not None else next(iter(creds.values()), None)
+
+        if kind == "bearer" or kind == "oauth2":
+            field_key = "access_token_field" if kind == "oauth2" else "token_field"
+            value = _val("access_token", field_key)
+            hn = directive.get("header_name", "Authorization")
+            hp = directive.get("header_prefix", "Bearer ")
+            return ({hn: f"{hp}{value}"} if value else {}), {}
+        if kind == "api_key":
+            value = _val("api_key", "key_field")
+            if value is None:
+                return {}, {}
+            value = f"{directive.get('prefix', '')}{value}"
+            if directive.get("query_param"):
+                return {}, {directive["query_param"]: value}
+            return {directive.get("header_name", "X-API-Key"): value}, {}
+        if kind == "basic":
+            u = creds.get(directive.get("username_field", "username"))
+            p = creds.get(directive.get("password_field", "password"))
+            if u and p:
+                import base64
+
+                tok = base64.b64encode(f"{u}:{p}".encode()).decode()
+                return {"Authorization": f"Basic {tok}"}, {}
+            return {}, {}
+        if kind in ("hmac", "aws_sigv4"):
+            return {}, {}  # signed per-request — discover via public endpoints
+        # unknown directive → fall through to inference
+    return _infer_probe_headers(creds), {}
+
+
+def build_probe_auth_headers(credentials: dict[str, Any] | None) -> dict[str, str]:
+    """Probe auth headers only (see :func:`build_probe_auth`)."""
+    return build_probe_auth(credentials)[0]
 
 
 def parse_llm_endpoints_response(

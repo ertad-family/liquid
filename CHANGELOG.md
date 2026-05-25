@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.28.0] - 2026-05-25
+
+### Added — full auth-scheme coverage (explicit directive + query-param keys)
+
+Every supported auth scheme is now reachable at connect time, with zero-config
+inference kept for the common cases.
+
+- **Reserved `auth` directive** in credentials maps onto any scheme via
+  `scheme_from_directive`: `bearer`, `api_key` (header **or** `query_param`),
+  `basic`, `hmac`, `aws_sigv4`, `oauth2` — the scheme's fields are passed
+  verbatim (signing template, region/service, refresh URL, …). Example:
+  `{"api_key": "k", "auth": {"scheme": "api_key", "query_param": "key"}}`.
+- **Query-param API keys**: `build_probe_auth()` returns
+  `(headers, query_params)`; the key is appended to discovery probes and to
+  fetch-time auth. `discover()` threads probe query params through the REST
+  heuristic.
+- `scheme_from_credentials` honors an explicit directive first, then falls back
+  to field-name inference (basic / bearer / header-shaped name / api key).
+
+HMAC and AWS SigV4 sign per-request, so they carry **no static probe auth** —
+discovery of such APIs relies on their public endpoints; fetch-time signing
+works via the configured scheme. (HMAC variants that sign API-specific strings
+beyond `{method}/{path}/{query}/{body}/{timestamp}` still need a custom
+template.)
+
 ## [0.27.0] - 2026-05-25
 
 ### Added — auth breadth + identity-fallback mappings

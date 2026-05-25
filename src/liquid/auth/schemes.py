@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote, urlencode
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator
@@ -35,6 +35,40 @@ class _BaseScheme(BaseModel):
     model_config = {"frozen": True}
 
 
+def scheme_from_directive(directive: dict):
+    """Build an explicit auth scheme from a credentials ``auth`` directive.
+
+    The directive names a ``scheme`` (or ``kind``) and supplies that scheme's
+    fields verbatim — the escape hatch for anything inference can't guess
+    (query-param keys, HMAC signing templates, AWS SigV4 region/service,
+    OAuth2 refresh). Example::
+
+        {"scheme": "hmac", "signing_key_field": "secret",
+         "header_name": "X-Signature", "signing_template": "{timestamp}{body}"}
+
+    Returns ``None`` for an unknown scheme or invalid field set.
+    """
+    if not isinstance(directive, dict):
+        return None
+    kind = directive.get("scheme") or directive.get("kind")
+    registry = {
+        "bearer": BearerAuth,
+        "api_key": ApiKeyAuth,
+        "basic": BasicAuth,
+        "hmac": HMACAuth,
+        "aws_sigv4": AwsSigV4Auth,
+        "oauth2": OAuth2Auth,
+    }
+    cls = registry.get(kind)
+    if cls is None:
+        return None
+    params = {k: v for k, v in directive.items() if k not in ("scheme", "kind")}
+    try:
+        return cls(**params)
+    except (ValidationError, TypeError):
+        return None
+
+
 def scheme_from_credentials(auth_type: str, credentials: dict | None):
     """Pick a concrete auth scheme matching how credentials were stored.
 
@@ -45,6 +79,11 @@ def scheme_from_credentials(auth_type: str, credentials: dict | None):
     """
     if not credentials:
         return None
+    directive = credentials.get("auth")
+    if isinstance(directive, dict):
+        explicit = scheme_from_directive(directive)
+        if explicit is not None:
+            return explicit
     creds = {k: v for k, v in credentials.items() if k != "auth"}
     if creds.get("username") and creds.get("password"):
         return BasicAuth()
