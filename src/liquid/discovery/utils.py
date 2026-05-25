@@ -26,6 +26,68 @@ def infer_service_name(url: str) -> str:
     return host.capitalize()
 
 
+_ENVELOPE_KNOWN_KEYS = ("data", "results", "items", "records")
+_ENVELOPE_META_KEYS = frozenset({"meta", "links", "pagination", "_meta", "page", "page_info", "info"})
+
+
+def detect_record_envelope(sample: Any) -> tuple[str | None, dict[str, Any] | None]:
+    """Infer (record_path, one_sample_record) from a probed response body.
+
+    Lets discovery name the record array and capture a real record's fields
+    without trusting the LLM. Returns ``(None, record)`` for a bare object,
+    ``(key, record)`` for an envelope, ``(None, None)`` when undetermined.
+    """
+    if isinstance(sample, list):
+        first = sample[0] if sample and isinstance(sample[0], dict) else None
+        return None, first
+    if isinstance(sample, dict):
+        for key in _ENVELOPE_KNOWN_KEYS:
+            value = sample.get(key)
+            if isinstance(value, list):
+                return key, (value[0] if value and isinstance(value[0], dict) else None)
+        list_keys = [k for k, v in sample.items() if isinstance(v, list) and k not in _ENVELOPE_META_KEYS]
+        if len(list_keys) == 1:
+            value = sample[list_keys[0]]
+            return list_keys[0], (value[0] if value and isinstance(value[0], dict) else None)
+        return None, sample
+    return None, None
+
+
+def schema_from_record(record: dict[str, Any] | None) -> dict[str, Any]:
+    """Build a shallow JSON-schema-ish ``response_schema`` from a sample record."""
+    if not isinstance(record, dict):
+        return {}
+    type_map = {str: "string", bool: "boolean", int: "integer", float: "number", list: "array", dict: "object"}
+    props = {k: {"type": type_map.get(type(v), "string")} for k, v in record.items()}
+    return {"type": "object", "properties": props}
+
+
+def build_probe_auth_headers(credentials: dict[str, Any] | None) -> dict[str, str]:
+    """Build HTTP headers so discovery can probe auth-walled APIs.
+
+    Many APIs (e.g. cloud providers) return 401 on every endpoint until
+    authenticated and publish no OpenAPI spec — unauthenticated probing finds
+    nothing. Given the same credentials the caller will store, derive a best-
+    effort auth header for probe requests:
+
+    - ``token`` / ``access_token`` / ``bearer`` → ``Authorization: Bearer <v>``
+    - ``api_key`` / ``key`` → ``Authorization: Bearer <v>`` *and* ``X-API-Key``
+    """
+    if not credentials:
+        return {}
+    headers: dict[str, str] = {}
+    for field in ("token", "access_token", "bearer"):
+        if credentials.get(field):
+            headers["Authorization"] = f"Bearer {credentials[field]}"
+            return headers
+    for field in ("api_key", "key", "apikey"):
+        if credentials.get(field):
+            headers["Authorization"] = f"Bearer {credentials[field]}"
+            headers["X-API-Key"] = str(credentials[field])
+            return headers
+    return headers
+
+
 def parse_llm_endpoints_response(
     content: str,
     url: str,
@@ -49,6 +111,7 @@ def parse_llm_endpoints_response(
             request_schema = ep.get("request_schema")
             if isinstance(request_schema, dict) and not request_schema:
                 request_schema = None
+            record_path = ep.get("record_path")
             endpoints.append(
                 Endpoint(
                     path=ep["path"],
@@ -56,6 +119,7 @@ def parse_llm_endpoints_response(
                     description=ep.get("description", ""),
                     kind=kind,
                     request_schema=request_schema if isinstance(request_schema, dict) else None,
+                    record_path=record_path if isinstance(record_path, str) and record_path else None,
                 )
             )
 

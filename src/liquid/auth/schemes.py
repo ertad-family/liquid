@@ -35,6 +35,31 @@ class _BaseScheme(BaseModel):
     model_config = {"frozen": True}
 
 
+def scheme_from_credentials(auth_type: str, credentials: dict | None):
+    """Pick a concrete auth scheme matching how credentials were stored.
+
+    :meth:`AuthManager.store_credentials` writes each credential under
+    ``{auth_ref}/{field}``. The returned scheme reads back the same field, so
+    fetch-time auth lines up with what ``connect`` stored. Returns ``None`` when
+    no usable credential field is present (caller falls back to flat lookup).
+    """
+    if not credentials:
+        return None
+    for field in ("token", "access_token", "bearer"):
+        if credentials.get(field):
+            return BearerAuth(token_field=field)
+    for field in ("api_key", "key", "apikey"):
+        if credentials.get(field):
+            return ApiKeyAuth(key_field=field)
+    if credentials.get("username") and credentials.get("password"):
+        return BasicAuth()
+    # Unknown shape but auth is bearer/oauth2 — assume a single token-ish value.
+    if auth_type in ("bearer", "oauth2") and len(credentials) == 1:
+        only = next(iter(credentials))
+        return BearerAuth(token_field=only)
+    return None
+
+
 class BearerAuth(_BaseScheme):
     """Static bearer token from vault (``{vault_key}/access_token``)."""
 
