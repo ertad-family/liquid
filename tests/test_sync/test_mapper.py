@@ -16,6 +16,21 @@ class TestExtractPath:
         data = {"items": [{"price": 10}, {"price": 20}]}
         assert _extract_path(data, "items[].price") == [10, 20]
 
+    def test_array_index(self):
+        assert _extract_path({"capital": ["Ljubljana"]}, "capital[0]") == "Ljubljana"
+
+    def test_array_index_then_key(self):
+        data = {"items": [{"name": "a"}, {"name": "b"}]}
+        assert _extract_path(data, "items[1].name") == "b"
+
+    def test_array_index_out_of_range(self):
+        with pytest.raises(KeyError):
+            _extract_path({"capital": ["Ljubljana"]}, "capital[5]")
+
+    def test_array_index_on_non_list(self):
+        with pytest.raises(KeyError):
+            _extract_path({"capital": "Ljubljana"}, "capital[0]")
+
     def test_missing_field(self):
         with pytest.raises(KeyError):
             _extract_path({"a": 1}, "b")
