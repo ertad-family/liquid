@@ -102,6 +102,50 @@ def test_fetch_self_heals_renamed_fields():
     assert {m.source_path for m in config.mappings} == {"repo_name", "owner_login"}
 
 
+def test_fetch_recovers_hallucinated_path_without_llm():
+    # The SpaceX case: the LLM mapped `name` to a path that doesn't exist
+    # (`/v2.project_name`) while `name` sits plainly at top level. Convergence
+    # drops the dead path and identity-recovers `name` — no LLM call needed.
+    rows = [{"name": "Falcon 1", "country": "USA"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=rows)
+
+    class _Boom:
+        async def chat(self, messages, tools=None):
+            raise AssertionError("identity recovery must not need the LLM")
+
+    schema = APISchema(
+        source_url="https://api.example.com",
+        service_name="Demo",
+        discovery_method="rest_heuristic",
+        endpoints=[Endpoint(path="/rockets", method="GET", kind=EndpointKind.READ, pagination=PaginationType.NONE)],
+        auth=AuthRequirement(type="bearer", tier="A"),
+    )
+    config = AdapterConfig(
+        schema=schema,
+        auth_ref="vault/demo",
+        mappings=[
+            FieldMapping(source_path="/v2.project_name", target_field="name"),  # hallucinated
+            FieldMapping(source_path="country", target_field="country"),
+        ],
+        sync=SyncConfig(endpoints=["/rockets"]),
+    )
+
+    async def run():
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        vault = InMemoryVault()
+        await vault.store("vault/demo", "tok")
+        liquid = Liquid(
+            llm=_Boom(), vault=vault, sink=CollectorSink(), registry=InMemoryAdapterRegistry(), http_client=client
+        )
+        recs = await liquid.fetch(config, "/rockets")
+        await client.aclose()
+        return recs
+
+    assert asyncio.run(run()) == [{"name": "Falcon 1", "country": "USA"}]
+
+
 def test_fetch_does_not_repair_healthy_adapter():
     # A healthy adapter must not trigger a re-map (no spurious LLM calls).
     rows = [{"repo_name": "liquid", "owner_login": "ertad"}]
