@@ -151,7 +151,7 @@ class Liquid:
 
     def __init__(
         self,
-        llm: LLMBackend,
+        llm: LLMBackend | None,
         vault: Vault,
         sink: DataSink,
         knowledge: KnowledgeStore | None = None,
