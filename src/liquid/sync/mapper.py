@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from liquid.exceptions import FieldNotFoundError
@@ -48,33 +49,44 @@ class RecordMapper:
         return [self.map_record(r, source_endpoint) for r in records]
 
 
+_SEGMENT = re.compile(r"^(?P<key>[^\[\]]*)(?P<index>\[\d*\])?$")
+
+
 def _extract_path(data: Any, path: str) -> Any:
-    """Extract value from nested dict using dot-notation path.
+    """Extract value from nested dict/list using dot-notation path.
 
     Supports:
     - "field" -> data["field"]
     - "nested.field" -> data["nested"]["field"]
-    - "items[].price" -> [item["price"] for item in data["items"]]
+    - "items[].price" -> [item["price"] for item in data["items"]]  (all items)
+    - "capital[0]" -> data["capital"][0]                            (indexed)
+    - "items[2].name" -> data["items"][2]["name"]
     """
     parts = path.split(".")
     current: Any = data
 
-    for part in parts:
-        if part.endswith("[]"):
-            key = part[:-2]
-            if key:
-                if not isinstance(current, dict) or key not in current:
-                    raise KeyError(path)
-                current = current[key]
-            if not isinstance(current, list):
+    for i, part in enumerate(parts):
+        m = _SEGMENT.match(part)
+        key = m.group("key") if m else part
+        index = m.group("index") if m else None
+
+        if key:
+            if not isinstance(current, dict) or key not in current:
                 raise KeyError(path)
-            remaining = ".".join(parts[parts.index(part) + 1 :])
+            current = current[key]
+
+        if index is None:
+            continue
+        if not isinstance(current, list):
+            raise KeyError(path)
+        if index == "[]":
+            remaining = ".".join(parts[i + 1 :])
             if remaining:
                 return [_extract_path(item, remaining) for item in current]
             return current
-        else:
-            if not isinstance(current, dict) or part not in current:
-                raise KeyError(path)
-            current = current[part]
+        n = int(index[1:-1])
+        if not -len(current) <= n < len(current):
+            raise KeyError(path)
+        current = current[n]
 
     return current

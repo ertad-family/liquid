@@ -97,7 +97,10 @@ class MappingProposer:
                     "You are a data mapping expert. Given an API schema and a target data model, "
                     "propose field mappings. Respond with a JSON array of objects, each with: "
                     "source_path (string, dot-notation), target_field (string), "
-                    "transform (string expression or null), confidence (float 0-1)."
+                    "transform (string expression or null), confidence (float 0-1). "
+                    "source_path may use dotted nesting (e.g. 'name.common') and array indexing "
+                    "(e.g. 'capital[0]'); when a scalar target maps to an array source, index the "
+                    "first element rather than returning the whole array."
                 ),
             ),
             Message(
