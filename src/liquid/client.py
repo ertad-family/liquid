@@ -268,9 +268,7 @@ class Liquid:
         (and that publish no OpenAPI spec). The same credentials are later stored
         by :meth:`get_or_create` for fetch-time auth.
         """
-        from liquid.discovery.utils import build_probe_auth
-
-        auth_headers, auth_params = build_probe_auth(credentials)
+        probe_auth = await self._build_probe_auth(credentials)
         client = self._http_client or httpx.AsyncClient()
         try:
             pipeline = DiscoveryPipeline(
@@ -278,12 +276,7 @@ class Liquid:
                     MCPDiscovery(),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
-                    RESTHeuristicDiscovery(
-                        llm=self.llm,
-                        http_client=client,
-                        auth_headers=auth_headers,
-                        auth_params=auth_params,
-                    ),
+                    RESTHeuristicDiscovery(llm=self.llm, http_client=client, probe_auth=probe_auth),
                     BrowserDiscovery(llm=self.llm),
                 ]
             )
@@ -291,6 +284,31 @@ class Liquid:
         finally:
             if not self._http_client:
                 await client.aclose()
+
+    async def _build_probe_auth(self, credentials: dict[str, Any] | None) -> Any:
+        """Authenticate discovery probes with the *same* scheme used for fetch.
+
+        Builds the credential-derived auth scheme against a throwaway in-memory
+        vault and returns its ``httpx.Auth``. This makes probing work uniformly
+        for every scheme — including request-signing ones (HMAC, AWS SigV4) and
+        path-embedded tokens — that a static header/param can't express.
+        """
+        if not credentials:
+            return None
+        from liquid._defaults import InMemoryVault
+        from liquid.auth.schemes import scheme_from_credentials
+
+        scheme = scheme_from_credentials("custom", credentials)
+        if scheme is None:
+            return None
+        tmp = InMemoryVault()
+        for key, value in credentials.items():
+            if key != "auth":
+                await tmp.store(f"probe/{key}", str(value))
+        try:
+            return await scheme.build_httpx_auth(tmp, "probe")
+        except Exception:
+            return None
 
     def classify_auth(self, schema: APISchema) -> EscalationInfo:
         """Phase 2: Classify auth requirements and return escalation info."""
