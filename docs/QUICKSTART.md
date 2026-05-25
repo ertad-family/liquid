@@ -253,6 +253,31 @@ result = await liquid.execute_batch(
 # result.results, result.succeeded, result.failed
 ```
 
+## No-LLM runtime — discover once, sync forever
+
+AI participates only at **setup** (discovery + field mapping). Once you have an
+`AdapterConfig`, the runtime is pure HTTP + deterministic transforms — no model
+call per fetch, no provider cost, reproducible behavior. Persist the adapter and
+reload it into a `Liquid` built with `llm=None`:
+
+```python
+# --- setup run (needs an LLM once) ---
+adapter = await liquid.get_or_create(url=..., target_model=..., credentials=...)
+Path("adapter.json").write_text(json.dumps(adapter.model_dump(by_alias=True, mode="json")))
+
+# --- every run after that (no LLM, no keys to a model provider) ---
+from liquid.models.adapter import AdapterConfig
+
+adapter = AdapterConfig.model_validate(json.loads(Path("adapter.json").read_text()))
+liquid = Liquid(llm=None, vault=my_vault, sink=CollectorSink())
+data = await liquid.fetch(adapter, "/orders")   # deterministic, zero model calls
+```
+
+The convergence/self-heal step still runs without an LLM — it drops stale paths
+and recovers identity matches from the live response; it only escalates to the
+model if one is provided. Full runnable example:
+[`examples/20_no_llm_runtime.py`](../examples/20_no_llm_runtime.py).
+
 ## What's next?
 
 - `docs/ARCHITECTURE.md` — pipeline, protocols, agent UX layer
