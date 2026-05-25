@@ -45,17 +45,22 @@ def scheme_from_credentials(auth_type: str, credentials: dict | None):
     """
     if not credentials:
         return None
-    for field in ("token", "access_token", "bearer"):
-        if credentials.get(field):
-            return BearerAuth(token_field=field)
-    for field in ("api_key", "key", "apikey"):
-        if credentials.get(field):
-            return ApiKeyAuth(key_field=field)
-    if credentials.get("username") and credentials.get("password"):
+    creds = {k: v for k, v in credentials.items() if k != "auth"}
+    if creds.get("username") and creds.get("password"):
         return BasicAuth()
+    for field in ("token", "access_token", "bearer"):
+        if creds.get(field):
+            return BearerAuth(token_field=field)
+    # A header-shaped field name (e.g. ``xi-api-key``) → send it as that header.
+    for field in creds:
+        if "-" in field or field.lower().startswith(("x-", "xi-")):
+            return ApiKeyAuth(header_name=field, key_field=field)
+    for field in ("api_key", "key", "apikey"):
+        if creds.get(field):
+            return ApiKeyAuth(key_field=field)
     # Unknown shape but auth is bearer/oauth2 — assume a single token-ish value.
-    if auth_type in ("bearer", "oauth2") and len(credentials) == 1:
-        only = next(iter(credentials))
+    if auth_type in ("bearer", "oauth2") and len(creds) == 1:
+        only = next(iter(creds))
         return BearerAuth(token_field=only)
     return None
 

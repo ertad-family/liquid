@@ -9,7 +9,7 @@ mapping normalization against a discovered record_path.
 from __future__ import annotations
 
 from liquid.auth.schemes import ApiKeyAuth, BasicAuth, BearerAuth, scheme_from_credentials
-from liquid.client import _normalize_mappings_to_record
+from liquid.client import _identity_fallback_mappings, _normalize_mappings_to_record
 from liquid.discovery.utils import (
     build_probe_auth_headers,
     detect_record_envelope,
@@ -31,6 +31,17 @@ class TestProbeAuthHeaders:
         headers = build_probe_auth_headers({"api_key": "k1"})
         assert headers["X-API-Key"] == "k1"
         assert headers["Authorization"] == "Bearer k1"
+
+    def test_custom_header_field(self):
+        assert build_probe_auth_headers({"xi-api-key": "v"}) == {"xi-api-key": "v"}
+
+    def test_basic_from_username_password(self):
+        h = build_probe_auth_headers({"username": "u", "password": "p"})
+        assert h["Authorization"].startswith("Basic ")
+
+    def test_auth_directive_is_ignored_as_value(self):
+        # the reserved ``auth`` key is not treated as a credential value
+        assert build_probe_auth_headers({"auth": {"x": 1}, "token": "t"}) == {"Authorization": "Bearer t"}
 
     def test_empty(self):
         assert build_probe_auth_headers(None) == {}
@@ -87,6 +98,12 @@ class TestSchemeFromCredentials:
         scheme = scheme_from_credentials("basic", {"username": "u", "password": "p"})
         assert isinstance(scheme, BasicAuth)
 
+    def test_custom_header(self):
+        scheme = scheme_from_credentials("api_key", {"xi-api-key": "k"})
+        assert isinstance(scheme, ApiKeyAuth)
+        assert scheme.header_name == "xi-api-key"
+        assert scheme.key_field == "xi-api-key"
+
     def test_none(self):
         assert scheme_from_credentials("bearer", None) is None
 
@@ -135,3 +152,42 @@ class TestNormalizeMappings:
         mappings = [FieldMapping(source_path="instances[].id", target_field="id")]
         out = _normalize_mappings_to_record(mappings, schema)
         assert out[0].source_path == "instances[].id"
+
+
+class TestIdentityFallback:
+    def _schema_with_fields(self, fields: list[str]) -> APISchema:
+        return APISchema(
+            source_url="https://api.example.com",
+            service_name="X",
+            discovery_method="rest_heuristic",
+            endpoints=[
+                Endpoint(
+                    path="/health",
+                    method="GET",
+                    response_schema={"type": "object", "properties": {f: {"type": "string"} for f in fields}},
+                )
+            ],
+            auth=AuthRequirement(type="bearer", tier="A"),
+        )
+
+    def test_fills_missing_target_fields(self):
+        # proposer returned zero mappings (the Apollo case); discovery captured
+        # the record's fields → identity mappings fill the gap.
+        schema = self._schema_with_fields(["healthy", "is_logged_in"])
+        out = _identity_fallback_mappings([], {"healthy": "bool", "is_logged_in": "bool"}, schema)
+        assert {(m.source_path, m.target_field) for m in out} == {
+            ("healthy", "healthy"),
+            ("is_logged_in", "is_logged_in"),
+        }
+
+    def test_keeps_existing_and_adds_missing(self):
+        # proposer mapped 1 of 2 (the GitHub case) → only the missing one is added.
+        schema = self._schema_with_fields(["name", "language"])
+        existing = [FieldMapping(source_path="name", target_field="name")]
+        out = _identity_fallback_mappings(existing, {"name": "str", "language": "str"}, schema)
+        assert {m.target_field for m in out} == {"name", "language"}
+
+    def test_does_not_invent_unknown_fields(self):
+        schema = self._schema_with_fields(["name"])
+        out = _identity_fallback_mappings([], {"name": "str", "nonexistent": "str"}, schema)
+        assert {m.target_field for m in out} == {"name"}  # nonexistent not in record → skipped
