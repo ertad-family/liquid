@@ -13,6 +13,7 @@ from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
 from liquid.discovery.diff import diff_schemas
 from liquid.discovery.graphql import GraphQLDiscovery
+from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
@@ -313,6 +314,7 @@ class Liquid:
         try:
             pipeline = DiscoveryPipeline(
                 [
+                    GRPCDiscovery(),
                     MCPDiscovery(),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),

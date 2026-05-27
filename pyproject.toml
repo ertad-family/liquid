@@ -50,6 +50,11 @@ anthropic = [
 litellm = [
     "litellm>=1.0",
 ]
+grpc = [
+    "grpcio>=1.60",
+    "grpcio-reflection>=1.60",
+    "protobuf>=4.25",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -89,3 +94,6 @@ known-first-party = ["liquid"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "network: end-to-end tests that reach external services (deselect with '-m \"not network\"')",
+]
