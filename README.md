@@ -214,6 +214,42 @@ fetch() -> 50 typed records; first 3:
 
 Two model calls to learn the API, then zero forever. That's the whole pitch.
 
+## Run as an MCP server (open source, self-hosted)
+
+Expose the engine to any MCP client (Claude Desktop, Cursor, Claude Code). It runs
+the Liquid engine **in your own process** — no cloud, no account, no lock-in:
+
+```bash
+pip install 'liquid-api[mcp]'
+export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY,
+                                    # or OPENAI_BASE_URL=http://localhost:11434/v1 for local (Ollama/vLLM)
+liquid-mcp                          # or: python -m liquid.mcp_server
+```
+
+Claude Code:
+
+```bash
+claude mcp add liquid --scope user -e OPENAI_API_KEY=sk-... -- liquid-mcp
+```
+
+Claude Desktop / any MCP client:
+
+```json
+{ "mcpServers": { "liquid": { "command": "liquid-mcp", "env": { "OPENAI_API_KEY": "sk-..." } } } }
+```
+
+Tools: `liquid_connect` (discover + map any API), `liquid_fetch`, `liquid_query`
+(server-side search/aggregate), `liquid_list_adapters`, `liquid_discover`.
+Adapters and credentials persist under `~/.liquid`. Backed by your model — OpenAI,
+Gemini, Anthropic, or any OpenAI-compatible/local endpoint via `base_url`.
+
+Real run — connecting to an API it had never seen, fully local:
+
+```text
+liquid_connect → {"status":"connected","service":"Openbrewerydb","mapped_fields":["name","city","country"]}
+liquid_fetch   → 50 typed records, e.g. {"name":"(405) Brewing Co","city":"Norman","country":"United States"}
+```
+
 ## Quick start — LangGraph agent with Shopify
 
 ```python

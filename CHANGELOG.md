@@ -2,6 +2,30 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.35.0] - 2026-05-27
+
+### Added — turnkey, self-hosted MCP server (no cloud)
+
+The open-source library is now usable end to end without writing glue or bringing
+your own everything — the big adoption barriers are gone:
+
+- **`liquid-mcp` — a runnable MCP server** (`pip install 'liquid-api[mcp]'`,
+  `liquid-mcp` / `python -m liquid.mcp_server`). Runs the engine **in-process**
+  (no cloud, no HTTP proxy) and serves it to any MCP client (Claude Desktop,
+  Cursor, Claude Code). Tools: `liquid_connect`, `liquid_fetch`, `liquid_query`,
+  `liquid_list_adapters`, `liquid_discover`. Verified live: connect to an unseen
+  API + fetch 50 typed records, fully local.
+- **Built-in LLM backends + `llm_from_env()`** (`liquid.llm`):
+  `OpenAICompatibleBackend` (httpx-only — OpenAI **and** any OpenAI-compatible /
+  local endpoint: Ollama, vLLM, LM Studio, groq, together, openrouter — via
+  `base_url`), plus `GeminiBackend` / `AnthropicBackend` (extras). No more
+  hand-writing an `LLMBackend` to get started.
+- **File-backed persistence** (`liquid.persistence`): `FileVault` (0600) and
+  `FileAdapterRegistry` under `~/.liquid` — adapters and credentials survive
+  restarts (the in-memory defaults didn't).
+- New extras: `liquid-api[gemini]`, `liquid-api[anthropic]`; console script
+  `liquid-mcp`. Docs: README "Run as an MCP server" + updated `OSS-VS-CLOUD.md`.
+
 ## [0.34.0] - 2026-05-25
 
 ### Added — first-class no-LLM runtime
