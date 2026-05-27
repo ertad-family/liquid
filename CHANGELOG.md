@@ -2,6 +2,15 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.37.1] - 2026-05-27
+
+### Fixed
+- `mcp` is now a **core dependency** (was the `[mcp]` extra). `liquid-mcp` crashed
+  with `ModuleNotFoundError: No module named 'mcp'` after a plain `pip install
+  liquid-api` / `uv sync` (e.g. Glama's auto-build runs `uv sync` then the
+  console script). Now it works out of the box; `liquid-api[mcp]` still resolves
+  (no-op extra) for back-compat.
+
 ## [0.37.0] - 2026-05-27
 
 ### Added — observability in the MCP server

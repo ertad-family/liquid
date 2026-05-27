@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.37.0"
+version = "0.37.1"
 description = "Zapier for AI agents. Connect to any API on the fly."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -20,6 +20,10 @@ dependencies = [
     "pydantic>=2.7",
     "httpx>=0.27",
     "pyyaml>=6.0",
+    # The bundled MCP server (`liquid-mcp` console script) is a first-class
+    # feature, so `mcp` is a core dep — `liquid-mcp` works after a plain install
+    # and `uv sync` (no extra needed). Avoids a ModuleNotFoundError footgun.
+    "mcp>=1.0",
 ]
 
 [project.scripts]
@@ -36,9 +40,7 @@ Changelog = "https://github.com/ertad-family/liquid/blob/main/CHANGELOG.md"
 browser = [
     "playwright>=1.40",
 ]
-mcp = [
-    "mcp>=1.0",
-]
+mcp = []  # `mcp` is now a core dependency; kept for back-compat (`liquid-api[mcp]` still resolves)
 gemini = [
     "google-genai>=0.3",
 ]
