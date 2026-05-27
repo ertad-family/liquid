@@ -40,3 +40,6 @@ Thumbs.db
 !.env.example
 .local/
 .mcp.json
+
+# Local strategy notes — never publish
+PRODUCT_STRATEGY.md

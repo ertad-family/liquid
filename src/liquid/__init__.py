@@ -50,6 +50,7 @@ from liquid.exceptions import (
 )
 from liquid.intent import CANONICAL_INTENTS, Intent, IntentConfig, get_intent
 from liquid.intent import list_intents as list_canonical_intents
+from liquid.llm import AnthropicBackend, GeminiBackend, OpenAICompatibleBackend, llm_from_env
 from liquid.models import (
     ActionConfig,
     ActionError,
@@ -96,6 +97,7 @@ from liquid.normalize import (
     normalize_user_ref,
 )
 from liquid.observability import EventKind, EventStore, FetchEvent, InMemoryEventStore
+from liquid.persistence import FileAdapterRegistry, FileVault
 from liquid.protocols import AdapterRegistry, CacheStore, DataSink, KnowledgeStore, LLMBackend, Vault
 from liquid.query import (
     AggregateError,
@@ -143,6 +145,7 @@ __all__ = [
     "AdapterConfig",
     "AdapterRegistry",
     "AggregateError",
+    "AnthropicBackend",
     "ApiKeyAuth",
     "AuthError",
     "AuthRequirement",
@@ -174,7 +177,10 @@ __all__ = [
     "FetchUntilResult",
     "FieldMapping",
     "FieldNotFoundError",
+    "FileAdapterRegistry",
     "FileAttachment",
+    "FileVault",
+    "GeminiBackend",
     "GenericHMACWebhookVerifier",
     "GeoPoint",
     "GitHubWebhookVerifier",
@@ -197,6 +203,7 @@ __all__ = [
     "NLCompilationCache",
     "NLCompileError",
     "OAuth2Auth",
+    "OpenAICompatibleBackend",
     "PaginationEnvelope",
     "PersonName",
     "Phone",
@@ -245,6 +252,7 @@ __all__ = [
     "infer_limits",
     "list_adapters",
     "list_canonical_intents",
+    "llm_from_env",
     "lookup_known_limits",
     "normalize_datetime",
     "normalize_email",

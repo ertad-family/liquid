@@ -31,6 +31,9 @@ repo) and a **hosted service** (Liquid Cloud). This page is the honest boundary
 | Auth schemes | Bearer, API-key (header/query), Basic, HMAC, AWS SigV4, OAuth2, path-token |
 | Self-heal / convergence | Drops stale paths, identity-recovers; LLM-assisted only if a model is given |
 | Tools export | Anthropic / OpenAI / LangChain / CrewAI / MCP |
+| **Runnable MCP server** | `liquid-mcp` (`pip install 'liquid-api[mcp]'`) — exposes the local engine to any agent, no cloud |
+| **Built-in LLM backends** | OpenAI-compatible (incl. local/Ollama/vLLM), Gemini, Anthropic, `llm_from_env()` |
+| **File-backed persistence** | `FileVault` + `FileAdapterRegistry` — adapters/creds survive restarts |
 | Webhooks, streaming, observability | `verify_webhook`, `stream`, `InMemoryEventStore` |
 | All protocols + in-memory impls | Vault, LLM, Sink, Knowledge, Registry, Cache |
 | SSRF transport guard | `liquid.runtime.ssrf` for safe server-side fetching |
