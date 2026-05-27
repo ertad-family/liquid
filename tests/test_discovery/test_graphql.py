@@ -43,9 +43,11 @@ class TestGraphQLDiscovery:
         and pre-computes the selection set + arg types the driver needs."""
         schema = _load_fixture("graphql_introspection.json")
         transport = httpx.MockTransport(
-            lambda req: httpx.Response(200, json={"data": {"__schema": schema}})
-            if req.method == "POST"
-            else httpx.Response(404)
+            lambda req: (
+                httpx.Response(200, json={"data": {"__schema": schema}})
+                if req.method == "POST"
+                else httpx.Response(404)
+            )
         )
         async with httpx.AsyncClient(transport=transport) as client:
             result = await GraphQLDiscovery(http_client=client).discover("https://api.example.com")
