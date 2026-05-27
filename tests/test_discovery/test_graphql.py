@@ -38,6 +38,29 @@ class TestGraphQLDiscovery:
         assert "/graphql#query.user" in paths
         assert "/graphql#mutation.createUser" in paths
 
+    async def test_protocol_and_transport_meta_populated(self):
+        """Discovery tags GraphQL endpoints so the GraphQL driver renders them,
+        and pre-computes the selection set + arg types the driver needs."""
+        schema = _load_fixture("graphql_introspection.json")
+        transport = httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"data": {"__schema": schema}})
+            if req.method == "POST"
+            else httpx.Response(404)
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await GraphQLDiscovery(http_client=client).discover("https://api.example.com")
+
+        users_ep = next(ep for ep in result.endpoints if ep.path == "/graphql#query.users")
+        assert users_ep.protocol == "graphql"
+        meta = users_ep.transport_meta
+        assert meta["gql_path"] == "/graphql"
+        assert meta["operation"] == "query"
+        assert meta["field"] == "users"
+        # Scalar leaf fields of the User type are selected; nested/required-arg
+        # fields are not. The fixture's User has id/name/email scalars.
+        assert "id" in meta["selection"].split()
+        assert isinstance(meta["args"], dict)
+
     async def test_parameters_extracted(self):
         schema = _load_fixture("graphql_introspection.json")
         introspection_resp = {"data": {"__schema": schema}}

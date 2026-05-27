@@ -2,6 +2,32 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.38.0] - 2026-05-27
+
+### Added — multi-protocol transport (beyond REST)
+- **Pluggable transport drivers.** A new `liquid.transport.ProtocolDriver`
+  abstraction routes each endpoint by `Endpoint.protocol`. The Fetcher stays the
+  orchestrator (cache, rate-limit, telemetry, evolution, pagination); drivers do
+  the wire call and return a normalized `DriverResponse`. REST behaviour is
+  unchanged.
+- **GraphQL — real execution.** Was discovery-only; now renders query/mutation
+  from discovery metadata (selection set, arg types), POSTs `{query, variables}`,
+  unwraps `data.<field>` (flattening Relay `edges/node`), and paginates by
+  `pageInfo.endCursor`. GraphQL errors surface as fetch failures.
+- **SOAP / WSDL.** Stdlib-only (no new dependency). WSDL discovery + a SOAP
+  driver that builds the envelope, posts to the `soap:address` with the right
+  SOAPAction, and parses the XML response into records; Faults become failures.
+- **gRPC** (extra `grpc`). Server-reflection discovery + a driver that builds the
+  protobuf request from params, invokes unary / server-streaming over `grpc.aio`,
+  and converts responses to dicts. gRPC status codes map onto the shared errors.
+- **WebSocket** (extra `ws`). Frame-sampling discovery + a driver that reads a
+  bounded batch (optionally after a subscribe message) and turns frames into
+  records.
+
+All five — REST, GraphQL, SOAP, gRPC, WebSocket — share the same agent-facing
+API (fetch/query/mapping/recovery/cache). Live-verified end-to-end against
+public services (trevorblades GraphQL, Oorsprong SOAP, grpcb.in, echo.websocket).
+
 ## [0.37.1] - 2026-05-27
 
 ### Fixed

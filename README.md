@@ -171,6 +171,8 @@ Full methodology + per-task breakdown: [`benchmarks/RESULTS.md`](benchmarks/RESU
 pip install liquid-api
 pip install 'liquid-api[mcp]'        # bundled self-hosted MCP server (liquid-mcp)
 pip install 'liquid-api[litellm]'    # any of 100+ LLM providers (or [gemini] / [anthropic])
+pip install 'liquid-api[grpc]'       # gRPC transport (reflection)
+pip install 'liquid-api[ws]'         # WebSocket transport
 # Framework integrations
 pip install liquid-langchain   # LangChain / LangGraph
 pip install liquid-crewai      # CrewAI
@@ -329,8 +331,8 @@ URL                           Agent
  ↓                              ↑
  DISCOVERY                   FETCH / EXECUTE / SEARCH / AGGREGATE
  ↓                              ↑
- MCP → OpenAPI → GraphQL     Deterministic HTTP + transforms
- → REST heuristic → Browser     • Query DSL (server-side filter)
+ gRPC · WS · MCP · OpenAPI    Deterministic per-protocol transport
+ GraphQL · SOAP · REST · …      • Query DSL (server-side filter)
           ↓                     • Output normalization
        APISchema                • Verbosity / max_tokens / _meta
           ↓                     • Structured recovery
@@ -345,13 +347,32 @@ URL                           Agent
 
 | Method | Where it looks | Cost |
 |---|---|---|
+| gRPC | server reflection (`grpc://` / `grpcs://`) | Low |
+| WebSocket | frame sampling (`ws://` / `wss://`) | Low |
 | MCP | `/mcp` | Low (native protocol) |
 | OpenAPI | `/openapi.json`, `/swagger.json`, `/v3/api-docs` | Low |
 | GraphQL | `/graphql` (introspection) | Low |
+| SOAP / WSDL | the WSDL document (`?wsdl`) | Low |
 | REST heuristic | common paths + LLM interpretation | Medium |
 | Browser | Playwright capturing network | High |
 
 2,500+ APIs are pre-discovered and pre-mapped in the [global catalog](https://liquid.ertad.family/catalog) — most popular services connect with zero discovery cost.
+
+## Wire protocols
+
+Liquid speaks more than REST. Discovery tags each endpoint with a protocol, and a
+pluggable transport driver runs it — but the agent-facing API (`fetch`, `query`,
+mapping, recovery, cache, rate limits) is identical across all of them:
+
+| Protocol | Runtime | Install |
+|---|---|---|
+| REST / HTTP+JSON | ✅ built in | — |
+| GraphQL | ✅ query/mutation + Relay pagination | — |
+| SOAP / WSDL | ✅ stdlib XML | — |
+| gRPC | ✅ unary + server-streaming (reflection) | `liquid-api[grpc]` |
+| WebSocket | ✅ bounded batch reads + subscribe | `liquid-api[ws]` |
+
+New protocols plug in via the `liquid.transport.ProtocolDriver` protocol.
 
 ## Protocols
 
