@@ -1,0 +1,45 @@
+name: Publish liquid-mcp
+
+on:
+  push:
+    tags: ['liquid-mcp-v*']
+  workflow_dispatch:
+
+jobs:
+  pypi:
+    name: Publish liquid-mcp to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write          # PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+      - name: Build
+        run: uv build packages/liquid-mcp --out-dir packages/liquid-mcp/dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/liquid-mcp/dist
+
+  registry:
+    name: Publish to the official MCP registry
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write          # mcp-publisher github-oidc auth
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz -o mp.tgz
+          tar xzf mp.tgz mcp-publisher
+          sudo install mcp-publisher /usr/local/bin/mcp-publisher
+      - name: Publish server.json (GitHub OIDC, no browser)
+        run: |
+          sleep 30                       # let PyPI index the fresh release (registry verifies it)
+          mcp-publisher login github-oidc
+          mcp-publisher publish
