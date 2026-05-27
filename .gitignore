@@ -43,3 +43,5 @@ Thumbs.db
 
 # Local strategy notes — never publish
 PRODUCT_STRATEGY.md
+
+packages/*/dist/
