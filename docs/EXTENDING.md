@@ -2,6 +2,13 @@
 
 Liquid is designed as a library, not a framework. You control everything through Protocol-based interfaces.
 
+**You may not need to implement anything.** Batteries ship out of the box:
+concrete LLM backends (`OpenAICompatibleBackend`, `GeminiBackend`,
+`AnthropicBackend`, `LiteLLMBackend`, `CallableBackend`, and `llm_from_env()`),
+file-backed `FileVault` and `FileAdapterRegistry` (persist under `~/.liquid`),
+`InMemory*` defaults for everything, and a runnable MCP server (`liquid-mcp`).
+Implement the protocols below only to plug into your own infra.
+
 ## Protocols
 
 ### Vault — Credential Storage

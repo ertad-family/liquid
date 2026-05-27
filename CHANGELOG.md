@@ -2,6 +2,16 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.36.1] - 2026-05-27
+
+### Docs
+- Synced README + QUICKSTART / ARCHITECTURE / EXTENDING / OSS-VS-CLOUD with the
+  shipped batteries (0.35–0.36): built-in LLM backends + `llm_from_env()`, the
+  `liquid-mcp` server, file-backed persistence — docs previously said "bring your
+  own LLM" only, and the quickstart used a hand-written `MyLLM` stub.
+- Registry discoverability: zero-install `uvx` MCP config + `mcp-name` marker for
+  the official MCP registry.
+
 ## [0.36.0] - 2026-05-27
 
 ### Added — connect *any* LLM

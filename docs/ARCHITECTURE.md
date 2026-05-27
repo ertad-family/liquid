@@ -21,7 +21,7 @@ The pipeline has four stages:
 - **Runtime** executes. No LLM per fetch. The same adapter config drives thousands of calls.
 - **Agent UX** reshapes responses for an LLM's context budget: DSL filters, aggregates, text search, normalization, truncation, verbosity control, structured recovery on failure.
 
-Liquid is a library, not a service. It ships with in-memory defaults, a clean set of `Protocol`-based extension points (`Vault`, `LLMBackend`, `DataSink`, `KnowledgeStore`, `AdapterRegistry`, `CacheStore`), and is LLM-agnostic by construction.
+Liquid is a library, not a service. It ships with in-memory defaults, a clean set of `Protocol`-based extension points (`Vault`, `LLMBackend`, `DataSink`, `KnowledgeStore`, `AdapterRegistry`, `CacheStore`), and is LLM-agnostic by construction. It also ships **batteries** so it's turnkey, not just a toolkit: a self-hosted MCP server (`liquid-mcp`), concrete LLM backends (`OpenAICompatibleBackend`/`GeminiBackend`/`AnthropicBackend`/`LiteLLMBackend`/`CallableBackend` + `llm_from_env()`), and file-backed `FileVault` / `FileAdapterRegistry`.
 
 ## Discovery pipeline
 

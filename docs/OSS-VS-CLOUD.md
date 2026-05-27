@@ -21,7 +21,7 @@ repo) and a **hosted service** (Liquid Cloud). This page is the honest boundary
 | Capability | Notes |
 |---|---|
 | Discovery pipeline | MCP → OpenAPI → GraphQL → REST-heuristic → Browser |
-| AI field mapping | Bring your own `LLMBackend` (Anthropic/OpenAI/local/…) |
+| AI field mapping | Built-in backends (OpenAI/Gemini/Anthropic/LiteLLM, `llm_from_env()`, `CallableBackend`) or bring your own |
 | **No-LLM runtime** | Discover once, then `fetch`/`search`/`aggregate` with `llm=None` — no per-call model cost. See [`examples/20_no_llm_runtime.py`](../examples/20_no_llm_runtime.py) |
 | Deterministic runtime | HTTP + transforms, cache, rate-limit-aware token bucket |
 | Query DSL | Server-side `search` / `aggregate` / `text_search` / `fetch_until` |

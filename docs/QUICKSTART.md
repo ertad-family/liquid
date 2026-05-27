@@ -8,26 +8,35 @@ Liquid connects AI agents to any API. Point it at a URL, describe the data you w
 pip install liquid-api
 
 # Optional extras
-pip install "liquid-api[browser]"   # Playwright-backed discovery fallback
-pip install "liquid-api[mcp]"       # MCP discovery strategy
+pip install "liquid-api[mcp]"        # run the bundled MCP server (liquid-mcp) + MCP discovery
+pip install "liquid-api[gemini]"     # Google Gemini backend
+pip install "liquid-api[anthropic]"  # Anthropic backend
+pip install "liquid-api[litellm]"    # any of 100+ providers via LiteLLM
+pip install "liquid-api[browser]"    # Playwright-backed discovery fallback
 ```
 
-Liquid is LLM-agnostic. Bring your own Anthropic / OpenAI / local model and wrap it behind the `LLMBackend` protocol (one async `chat(...)` method — see `EXTENDING.md`).
+Liquid ships **built-in LLM backends** — set `OPENAI_API_KEY` (or `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`, or a local `OPENAI_BASE_URL`) and call `llm_from_env()`. Reach any of 100+ providers with `LiteLLMBackend`, or bring your own by wrapping any function with `CallableBackend` or implementing the one-method `LLMBackend` protocol (see `EXTENDING.md`).
+
+## Run as an MCP server
+
+```bash
+pip install "liquid-api[mcp]"
+export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY / local OPENAI_BASE_URL
+liquid-mcp                          # or: python -m liquid.mcp_server
+```
+
+Exposes the in-process engine to any MCP client (tools: `liquid_connect`, `liquid_fetch`, `liquid_query`, `liquid_discover`, `liquid_list_adapters`). Adapters and credentials persist under `~/.liquid`. See the README "Run as an MCP server" for client config.
 
 ## 30 seconds
 
 ```python
 import asyncio
-from liquid import Liquid
+from liquid import Liquid, llm_from_env
 from liquid._defaults import CollectorSink, InMemoryAdapterRegistry, InMemoryVault
-
-class MyLLM:
-    async def chat(self, messages, tools=None):
-        ...  # call your provider, return a LLMResponse
 
 async def main():
     liquid = Liquid(
-        llm=MyLLM(),
+        llm=llm_from_env(),   # picks OpenAI / Gemini / Anthropic / local from env
         vault=InMemoryVault(),
         sink=CollectorSink(),
         registry=InMemoryAdapterRegistry(),
