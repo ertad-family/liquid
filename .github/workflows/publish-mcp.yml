@@ -23,6 +23,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/liquid-mcp/dist
+          skip-existing: true
 
   registry:
     name: Publish to the official MCP registry
