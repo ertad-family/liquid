@@ -17,6 +17,7 @@ from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
+from liquid.discovery.websocket import WSDiscovery
 from liquid.discovery.wsdl import WSDLDiscovery
 from liquid.exceptions import ActionNotVerifiedError, LiquidError, Recovery
 from liquid.mapping.learning import MappingLearner
@@ -315,6 +316,7 @@ class Liquid:
             pipeline = DiscoveryPipeline(
                 [
                     GRPCDiscovery(),
+                    WSDiscovery(),
                     MCPDiscovery(),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
