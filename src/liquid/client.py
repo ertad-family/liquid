@@ -16,6 +16,7 @@ from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
+from liquid.discovery.wsdl import WSDLDiscovery
 from liquid.exceptions import ActionNotVerifiedError, LiquidError, Recovery
 from liquid.mapping.learning import MappingLearner
 from liquid.mapping.proposer import MappingProposer
@@ -315,6 +316,7 @@ class Liquid:
                     MCPDiscovery(),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
+                    WSDLDiscovery(http_client=client),
                     RESTHeuristicDiscovery(llm=self.llm, http_client=client, probe_auth=probe_auth),
                     BrowserDiscovery(llm=self.llm),
                 ]

@@ -16,9 +16,11 @@ from liquid.transport.base import (
 )
 from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.http import HTTPDriver
+from liquid.transport.soap import SOAPDriver
 
 register_driver(HTTPDriver())
 register_driver(GraphQLDriver())
+register_driver(SOAPDriver())
 
 __all__ = [
     "DriverResponse",
@@ -26,6 +28,7 @@ __all__ = [
     "GraphQLDriver",
     "HTTPDriver",
     "ProtocolDriver",
+    "SOAPDriver",
     "get_driver",
     "register_driver",
 ]
