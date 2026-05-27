@@ -96,10 +96,14 @@ class Fetcher:
 
         cache_key: str | None = None
         if cache_active and self.cache is not None:
+            # HTTP pagination folds the cursor into ``params`` already; protocols
+            # whose driver manages its own cursor (e.g. GraphQL) don't, so include
+            # it explicitly to keep distinct pages from colliding in the cache.
+            key_params = params if endpoint.protocol == "http" else {**params, "__cursor__": cursor}
             cache_key = compute_cache_key(
                 adapter_id=self.adapter_id or "",
                 endpoint_path=endpoint.path,
-                params=params,
+                params=key_params,
                 method=endpoint.method,
             )
             cached = await self.cache.get(cache_key)

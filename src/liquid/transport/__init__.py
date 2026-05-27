@@ -14,13 +14,16 @@ from liquid.transport.base import (
     get_driver,
     register_driver,
 )
+from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.http import HTTPDriver
 
 register_driver(HTTPDriver())
+register_driver(GraphQLDriver())
 
 __all__ = [
     "DriverResponse",
     "FetchContext",
+    "GraphQLDriver",
     "HTTPDriver",
     "ProtocolDriver",
     "get_driver",

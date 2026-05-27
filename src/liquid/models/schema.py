@@ -73,6 +73,10 @@ class Endpoint(BaseModel):
     ``"instances"`` for ``{"instances": [...]}``). ``None`` means the response
     is a bare list or single object. Discovery infers this; fetch uses it to
     unwrap enveloped payloads before mapping."""
+    transport_meta: dict[str, Any] = Field(default_factory=dict)
+    """Protocol-specific data the transport driver needs that doesn't fit the
+    generic fields — e.g. a GraphQL operation/selection-set, a SOAP action and
+    namespace, a gRPC service/method. Empty for plain REST."""
 
 
 class AuthRequirement(BaseModel):
