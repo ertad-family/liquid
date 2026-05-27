@@ -169,6 +169,8 @@ Full methodology + per-task breakdown: [`benchmarks/RESULTS.md`](benchmarks/RESU
 
 ```bash
 pip install liquid-api
+pip install 'liquid-api[mcp]'        # bundled self-hosted MCP server (liquid-mcp)
+pip install 'liquid-api[litellm]'    # any of 100+ LLM providers (or [gemini] / [anthropic])
 # Framework integrations
 pip install liquid-langchain   # LangChain / LangGraph
 pip install liquid-crewai      # CrewAI
