@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.37.1"
+version = "0.38.0"
 description = "Zapier for AI agents. Connect to any API on the fly."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -50,6 +50,14 @@ anthropic = [
 litellm = [
     "litellm>=1.0",
 ]
+grpc = [
+    "grpcio>=1.60",
+    "grpcio-reflection>=1.60",
+    "protobuf>=4.25",
+]
+ws = [
+    "websockets>=12.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -89,3 +97,6 @@ known-first-party = ["liquid"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "network: end-to-end tests that reach external services (deselect with '-m \"not network\"')",
+]

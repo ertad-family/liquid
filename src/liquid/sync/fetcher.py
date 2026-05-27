@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-import httpx  # noqa: TC002
+import httpx
 
 from liquid.cache.key import compute_cache_key
 from liquid.cache.ttl import parse_cache_control
@@ -19,6 +19,7 @@ from liquid.exceptions import (
 from liquid.models.schema import Endpoint  # noqa: TC001
 from liquid.sync.pagination import NoPagination, PaginationStrategy
 from liquid.sync.selector import RecordSelector
+from liquid.transport import FetchContext, get_driver
 
 if TYPE_CHECKING:
     from liquid.auth.schemes import AuthScheme
@@ -95,10 +96,14 @@ class Fetcher:
 
         cache_key: str | None = None
         if cache_active and self.cache is not None:
+            # HTTP pagination folds the cursor into ``params`` already; protocols
+            # whose driver manages its own cursor (e.g. GraphQL) don't, so include
+            # it explicitly to keep distinct pages from colliding in the cache.
+            key_params = params if endpoint.protocol == "http" else {**params, "__cursor__": cursor}
             cache_key = compute_cache_key(
                 adapter_id=self.adapter_id or "",
                 endpoint_path=endpoint.path,
-                params=params,
+                params=key_params,
                 method=endpoint.method,
             )
             cached = await self.cache.get(cache_key)
@@ -129,58 +134,72 @@ class Fetcher:
         if self.rate_limiter is not None and self.respect_rate_limit:
             await self.rate_limiter.acquire(rate_key)
 
-        start_time = time.perf_counter()
-        response = await self.http_client.request(
-            method=endpoint.method,
-            url=url,
+        driver = get_driver(endpoint.protocol)
+        ctx = FetchContext(
+            endpoint=endpoint,
+            base_url=base_url,
             params=params,
             headers=headers,
+            cursor=cursor,
+            selector=self.selector,
+            pagination=self.pagination,
+            vault=self.vault,
+            auth_ref=auth_ref,
             auth=auth,
-            follow_redirects=True,
+            auth_scheme=auth_scheme,
+            http_client=self.http_client,
         )
+
+        start_time = time.perf_counter()
+        wire = await driver.fetch(ctx)
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
         if self.rate_limiter is not None:
-            await self.rate_limiter.observe_response(rate_key, response)
+            await self.rate_limiter.observe_response(rate_key, wire)
 
         if self.telemetry is not None:
             await self.telemetry.record(
                 url=url,
-                status_code=response.status_code,
-                headers=dict(response.headers),
+                status_code=wire.status_code,
+                headers=wire.headers,
                 response_time_ms=elapsed_ms,
             )
 
-        _check_response(response)
+        # Map an error status to a recovery exception. HTTP-shaped protocols keep
+        # the exact prior semantics by checking the raw httpx.Response; other
+        # protocols use the normalized status the driver reported.
+        if isinstance(wire.raw, httpx.Response):
+            _check_response(wire.raw)
+        else:
+            _check_status(wire.status_code, wire.error_body or "", wire.headers)
 
         from liquid.evolution import extract_signals
 
         signals = extract_signals(
-            dict(response.headers),
+            wire.headers,
             endpoint=endpoint.path,
             expected_version=expected_api_version,
         )
 
-        data = response.json()
-        records = self.selector.select(data)
-        next_cursor = self.pagination.extract_next_cursor(response)
+        records = wire.records
+        next_cursor = wire.next_cursor
 
         result = FetchResult(
             records=records,
             next_cursor=next_cursor,
-            raw_response=response,
+            raw_response=wire.raw if isinstance(wire.raw, httpx.Response) else None,
             evolution_signals=signals,
         )
 
         if cache_active and cache_key is not None and self.cache is not None:
-            ttl = _resolve_ttl(override_ttl, response)
+            ttl = _resolve_ttl(override_ttl, wire.headers)
             if ttl > 0:
                 await self.cache.set(
                     cache_key,
                     {
                         "records": records,
                         "next_cursor": next_cursor,
-                        "status_code": response.status_code,
+                        "status_code": wire.status_code,
                     },
                     ttl,
                 )
@@ -188,22 +207,39 @@ class Fetcher:
         return result
 
 
-def _resolve_ttl(override_ttl: int | None, response: httpx.Response) -> int:
+def _resolve_ttl(override_ttl: int | None, headers: dict[str, str]) -> int:
     """Determine TTL: override > Cache-Control header > default (0)."""
     if override_ttl is not None and override_ttl > 0:
         return override_ttl
-    header_ttl = parse_cache_control(response.headers.get("cache-control"))
+    header_ttl = parse_cache_control(headers.get("cache-control"))
     if header_ttl is not None:
         return header_ttl
     return 0
 
 
 def _check_response(response: httpx.Response) -> None:
+    """Map an HTTP response to a recovery exception (preserves raise_for_status)."""
     if response.is_success:
         return
+    _check_status(response.status_code, response.text[:500], dict(response.headers), raw=response)
 
-    status = response.status_code
-    text = response.text[:500]
+
+def _check_status(
+    status: int,
+    text: str,
+    headers: dict[str, str],
+    *,
+    raw: httpx.Response | None = None,
+) -> None:
+    """Protocol-agnostic error mapping from a normalized (status, body, headers).
+
+    Drivers report a status code mapped onto HTTP-like semantics so every
+    protocol surfaces the same recovery exceptions. For HTTP, ``raw`` is passed
+    so the unhandled-status fallthrough preserves httpx's ``raise_for_status``.
+    """
+    if status < 400:
+        return
+
     details = {"status": status, "body": text}
 
     if status == 401:
@@ -229,7 +265,7 @@ def _check_response(response: httpx.Response) -> None:
             details=details,
         )
     if status == 429:
-        retry_after = response.headers.get("retry-after")
+        retry_after = headers.get("retry-after")
         retry_after_s = float(retry_after) if retry_after else None
         raise RateLimitError(
             f"Rate limited: {text}",
@@ -266,4 +302,12 @@ def _check_response(response: httpx.Response) -> None:
             details=details,
         )
 
-    response.raise_for_status()
+    # Unhandled 4xx. For HTTP preserve httpx's HTTPStatusError; for other
+    # protocols there's no raw response — surface a generic service error.
+    if raw is not None:
+        raw.raise_for_status()
+    raise ServiceDownError(
+        f"Request failed ({status}): {text}",
+        recovery=Recovery(hint=f"Upstream returned {status}.", retry_safe=False),
+        details=details,
+    )

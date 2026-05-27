@@ -58,6 +58,10 @@ class Endpoint(BaseModel):
     path: str
     method: str = "GET"
     description: str = ""
+    protocol: str = "http"
+    """Wire protocol used to reach this endpoint. Selects the transport driver
+    at fetch time (``http`` for REST/JSON, ``graphql``, ``soap``, ``grpc``,
+    ``ws`` …). Defaults to ``http`` so existing adapters keep REST behaviour."""
     kind: EndpointKind = EndpointKind.READ
     parameters: list[Parameter] = Field(default_factory=list)
     request_schema: dict[str, Any] | None = None
@@ -69,6 +73,10 @@ class Endpoint(BaseModel):
     ``"instances"`` for ``{"instances": [...]}``). ``None`` means the response
     is a bare list or single object. Discovery infers this; fetch uses it to
     unwrap enveloped payloads before mapping."""
+    transport_meta: dict[str, Any] = Field(default_factory=dict)
+    """Protocol-specific data the transport driver needs that doesn't fit the
+    generic fields — e.g. a GraphQL operation/selection-set, a SOAP action and
+    namespace, a gRPC service/method. Empty for plain REST."""
 
 
 class AuthRequirement(BaseModel):
@@ -81,7 +89,7 @@ class AuthRequirement(BaseModel):
 class APISchema(BaseModel):
     source_url: str
     service_name: str
-    discovery_method: Literal["mcp", "openapi", "graphql", "rest_heuristic", "browser"]
+    discovery_method: Literal["mcp", "openapi", "graphql", "rest_heuristic", "browser", "soap", "grpc", "websocket"]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement
     rate_limits: RateLimits | None = None
