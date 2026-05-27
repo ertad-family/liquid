@@ -249,7 +249,9 @@ Claude Desktop / any MCP client:
 <!-- mcp-name: io.github.ertad-family/liquid -->
 
 Tools: `liquid_connect` (discover + map any API), `liquid_fetch`, `liquid_query`
-(server-side search/aggregate), `liquid_list_adapters`, `liquid_discover`.
+(server-side search/aggregate), `liquid_estimate` (pre-flight cost/size, no HTTP),
+`liquid_list_adapters`, `liquid_discover`. `fetch`/`query` return a `_meta` block
+(service, endpoint, latency, records).
 Adapters and credentials persist under `~/.liquid`. Backed by **any LLM** — OpenAI,
 Gemini, Anthropic, any OpenAI-compatible/local endpoint via `base_url`, **any of
 100+ providers via LiteLLM** (`LIQUID_LLM_PROVIDER=litellm`,

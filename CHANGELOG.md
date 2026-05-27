@@ -2,6 +2,16 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.37.0] - 2026-05-27
+
+### Added — observability in the MCP server
+- **`liquid_estimate` tool** — pre-flight estimate (items / bytes / tokens /
+  credits / latency, with confidence + source) for a fetch, **no HTTP call**. The
+  agent checks cost/size before a heavy pull and can narrow with `liquid_query`.
+- **`_meta` on `liquid_fetch` / `liquid_query`** — every response carries
+  `{service, endpoint, latency_ms, records}` so the agent sees provenance and
+  timing per call (parity with hosted-gateway observability, but local).
+
 ## [0.36.1] - 2026-05-27
 
 ### Docs

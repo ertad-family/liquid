@@ -25,7 +25,7 @@ export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY / lo
 liquid-mcp                          # or: python -m liquid.mcp_server
 ```
 
-Exposes the in-process engine to any MCP client (tools: `liquid_connect`, `liquid_fetch`, `liquid_query`, `liquid_discover`, `liquid_list_adapters`). Adapters and credentials persist under `~/.liquid`. See the README "Run as an MCP server" for client config.
+Exposes the in-process engine to any MCP client (tools: `liquid_connect`, `liquid_fetch`, `liquid_query`, `liquid_estimate`, `liquid_discover`, `liquid_list_adapters`; `fetch`/`query` return a `_meta` block with latency/records). Adapters and credentials persist under `~/.liquid`. See the README "Run as an MCP server" for client config.
 
 ## 30 seconds
 
