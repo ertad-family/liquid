@@ -226,17 +226,25 @@ export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY,
 liquid-mcp                          # or: python -m liquid.mcp_server
 ```
 
-Claude Code:
+Zero-install with `uvx` — Claude Code:
 
 ```bash
-claude mcp add liquid --scope user -e OPENAI_API_KEY=sk-... -- liquid-mcp
+claude mcp add liquid --scope user -e OPENAI_API_KEY=sk-... -- uvx --from 'liquid-api[mcp]' liquid-mcp
 ```
 
 Claude Desktop / any MCP client:
 
 ```json
-{ "mcpServers": { "liquid": { "command": "liquid-mcp", "env": { "OPENAI_API_KEY": "sk-..." } } } }
+{ "mcpServers": { "liquid": {
+  "command": "uvx",
+  "args": ["--from", "liquid-api[mcp]", "liquid-mcp"],
+  "env": { "OPENAI_API_KEY": "sk-..." }
+} } }
 ```
+
+(Or after `pip install 'liquid-api[mcp]'`, use `"command": "liquid-mcp"` directly.)
+
+<!-- mcp-name: io.github.ertad-family/liquid -->
 
 Tools: `liquid_connect` (discover + map any API), `liquid_fetch`, `liquid_query`
 (server-side search/aggregate), `liquid_list_adapters`, `liquid_discover`.
