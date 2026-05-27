@@ -2,6 +2,24 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.36.0] - 2026-05-27
+
+### Added — connect *any* LLM
+
+- **`CallableBackend`** — wrap any callable (`messages -> str`, sync or async,
+  or returning an `LLMResponse`) into an `LLMBackend`. The universal escape hatch:
+  plug in any existing client/SDK/local model in a couple of lines.
+- **`LiteLLMBackend`** (`pip install 'liquid-api[litellm]'`) — reach any of 100+
+  providers through LiteLLM (OpenAI, Anthropic, Gemini, Bedrock, Vertex, Cohere,
+  Mistral, DeepSeek, Ollama, …) with one backend.
+- **`llm_from_env()` provider override** — `LIQUID_LLM_PROVIDER` =
+  `litellm` | `openai` | `gemini` | `anthropic` forces the backend (so the
+  `liquid-mcp` server can use any provider too), on top of the existing
+  key-based auto-detection.
+
+Combined with 0.35.0's `OpenAICompatibleBackend` (OpenAI + any compatible/local
+endpoint), Liquid now connects essentially any model — hosted, local, or custom.
+
 ## [0.35.0] - 2026-05-27
 
 ### Added — turnkey, self-hosted MCP server (no cloud)

@@ -16,15 +16,22 @@ optional extras (``pip install 'liquid-api[gemini]'`` / ``[anthropic]``).
 
 from __future__ import annotations
 
+import inspect
 import os
+from typing import TYPE_CHECKING
 
 import httpx
 
 from liquid.models.llm import LLMResponse, Message, Tool
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
 __all__ = [
     "AnthropicBackend",
+    "CallableBackend",
     "GeminiBackend",
+    "LiteLLMBackend",
     "OpenAICompatibleBackend",
     "llm_from_env",
 ]
@@ -111,28 +118,95 @@ class AnthropicBackend:
         return LLMResponse(content=text)
 
 
+def _messages_to_prompt(messages: list[Message]) -> str:
+    parts = [m.content if m.role == "system" else f"{m.role}: {m.content}" for m in messages]
+    return "\n\n".join(parts)
+
+
+class CallableBackend:
+    """Wrap *any* callable into an LLMBackend — the universal escape hatch.
+
+    The function receives the ``list[Message]`` (or, with ``as_text=True``, a
+    single joined prompt string) and returns the assistant text — sync or async.
+    Returning an :class:`LLMResponse` directly is also accepted. Lets you plug in
+    any existing client / SDK / local model in a couple of lines::
+
+        Liquid(llm=CallableBackend(lambda msgs: my_client.complete(msgs[-1].content)))
+        Liquid(llm=CallableBackend(my_async_fn, as_text=True))
+    """
+
+    def __init__(self, fn: Callable[..., str | LLMResponse | Awaitable], *, as_text: bool = False) -> None:
+        self._fn = fn
+        self._as_text = as_text
+
+    async def chat(self, messages: list[Message], tools: list[Tool] | None = None) -> LLMResponse:
+        arg = _messages_to_prompt(messages) if self._as_text else messages
+        out = self._fn(arg)
+        if inspect.isawaitable(out):
+            out = await out
+        if isinstance(out, LLMResponse):
+            return out
+        return LLMResponse(content=out if isinstance(out, str) else str(out))
+
+
+class LiteLLMBackend:
+    """Any of 100+ providers via LiteLLM (``pip install 'liquid-api[litellm]'``).
+
+    ``model`` uses LiteLLM naming: ``"gpt-4o"``, ``"claude-3-5-sonnet-latest"``,
+    ``"gemini/gemini-2.5-flash"``, ``"ollama/llama3"``, ``"bedrock/..."``,
+    ``"vertex_ai/..."``, ``"cohere/..."``, etc. Extra kwargs (api_key, api_base,
+    temperature, …) are forwarded to ``litellm.acompletion``.
+    """
+
+    def __init__(self, model: str, **kwargs) -> None:
+        self.model = model
+        self.kwargs = kwargs
+
+    async def chat(self, messages: list[Message], tools: list[Tool] | None = None) -> LLMResponse:
+        import litellm
+
+        resp = await litellm.acompletion(
+            model=self.model,
+            messages=[{"role": m.role, "content": m.content} for m in messages],
+            **self.kwargs,
+        )
+        content = resp["choices"][0]["message"].get("content") or ""
+        return LLMResponse(content=content)
+
+
 def llm_from_env():
     """Build an LLMBackend from environment, or return ``None`` (fetch-only).
 
-    Precedence:
-      1. OpenAI-compatible — ``OPENAI_API_KEY`` and/or ``OPENAI_BASE_URL`` (or a
-         bare ``LIQUID_LLM_BASE_URL`` for keyless local servers).
+    Force a provider with ``LIQUID_LLM_PROVIDER`` =
+    ``litellm`` | ``openai`` | ``gemini`` | ``anthropic`` (``litellm`` reaches
+    *any* of 100+ providers — set ``LIQUID_LLM_MODEL`` like ``anthropic/claude-3-5-sonnet``
+    or ``ollama/llama3``). Otherwise auto-detect by key:
+
+      1. OpenAI-compatible — ``OPENAI_API_KEY`` and/or ``OPENAI_BASE_URL`` /
+         ``LIQUID_LLM_BASE_URL`` (keyless local servers).
       2. ``GEMINI_API_KEY`` → Gemini.
       3. ``ANTHROPIC_API_KEY`` → Anthropic.
-    Model can be overridden with ``LIQUID_LLM_MODEL``. With none set, returns
-    ``None`` — the engine still fetches through existing adapters (no discovery).
+
+    Model override: ``LIQUID_LLM_MODEL``. With nothing set, returns ``None`` — the
+    engine still fetches through existing adapters (no discovery).
     """
+    provider = os.environ.get("LIQUID_LLM_PROVIDER", "").lower()
     model = os.environ.get("LIQUID_LLM_MODEL")
     base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("LIQUID_LLM_BASE_URL")
     openai_key = os.environ.get("OPENAI_API_KEY")
-    if openai_key or base_url:
+
+    if provider == "litellm":
+        return LiteLLMBackend(model=model or "gpt-4o-mini")
+    if provider in ("openai", "openai-compatible") or (not provider and (openai_key or base_url)):
         return OpenAICompatibleBackend(
             model=model or "gpt-4o-mini",
             api_key=openai_key or "",
             base_url=base_url or "https://api.openai.com/v1",
         )
-    if os.environ.get("GEMINI_API_KEY"):
-        return GeminiBackend(model=model or "gemini-2.5-flash", api_key=os.environ["GEMINI_API_KEY"])
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return AnthropicBackend(model=model or "claude-sonnet-4-20250514", api_key=os.environ["ANTHROPIC_API_KEY"])
+    if provider == "gemini" or (not provider and os.environ.get("GEMINI_API_KEY")):
+        return GeminiBackend(model=model or "gemini-2.5-flash", api_key=os.environ.get("GEMINI_API_KEY", ""))
+    if provider == "anthropic" or (not provider and os.environ.get("ANTHROPIC_API_KEY")):
+        return AnthropicBackend(
+            model=model or "claude-sonnet-4-20250514", api_key=os.environ.get("ANTHROPIC_API_KEY", "")
+        )
     return None
