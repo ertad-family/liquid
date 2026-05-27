@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from liquid.client import Liquid
 from liquid.llm import llm_from_env
@@ -55,6 +56,17 @@ def create_server():
 
     async def _find(adapter_id: str) -> AdapterConfig | None:
         return next((a for a in await registry.list_all() if a.config_id == adapter_id), None)
+
+    def _meta(config: AdapterConfig, endpoint, t0: float, records: int | None) -> dict:
+        m = {
+            "adapter_id": config.config_id,
+            "service": config.schema_.service_name,
+            "endpoint": endpoint or (config.sync.endpoints[0] if config.sync.endpoints else None),
+            "latency_ms": int((time.perf_counter() - t0) * 1000),
+        }
+        if records is not None:
+            m["records"] = records
+        return m
 
     @server.list_tools()
     async def list_tools() -> list:
@@ -119,6 +131,18 @@ def create_server():
                     "required": ["url"],
                 },
             ),
+            Tool(
+                name="liquid_estimate",
+                description=(
+                    "Pre-flight estimate (items, bytes, tokens, credits, latency) for a fetch — no HTTP "
+                    "call. Check this before a heavy fetch to decide whether to narrow with liquid_query."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {"adapter_id": {"type": "string"}, "endpoint": {"type": "string"}},
+                    "required": ["adapter_id"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -163,17 +187,20 @@ def create_server():
                 if config is None:
                     return _ok({"error": f"adapter {arguments['adapter_id']} not found"})
                 endpoint = arguments.get("endpoint")
+                t0 = time.perf_counter()
                 if name == "liquid_fetch":
                     data = await liquid.fetch(config, endpoint)
-                    if isinstance(data, list):
-                        return _ok({"records": len(data), "data": data[:_MAX_RECORDS]})
-                    return _ok(data)
+                    rows = data if isinstance(data, list) else None
+                    meta = _meta(config, endpoint, t0, len(rows) if rows is not None else None)
+                    if rows is not None:
+                        return _ok({"records": len(rows), "data": rows[:_MAX_RECORDS], "_meta": meta})
+                    return _ok({"data": data, "_meta": meta})
                 # liquid_query: aggregate (dict) or search (FetchResponse with .items)
                 if arguments.get("group_by") or arguments.get("agg"):
                     result = await liquid.aggregate(
                         config, endpoint, group_by=arguments.get("group_by"), agg=arguments.get("agg") or {}
                     )
-                    return _ok(result)
+                    return _ok({"result": result, "_meta": _meta(config, endpoint, t0, None)})
                 resp = await liquid.search(
                     config,
                     endpoint,
@@ -181,7 +208,20 @@ def create_server():
                     fields=arguments.get("fields"),
                     limit=arguments.get("limit") or 100,
                 )
-                return _ok({"records": len(resp.items), "data": resp.items[:_MAX_RECORDS]})
+                return _ok(
+                    {
+                        "records": len(resp.items),
+                        "data": resp.items[:_MAX_RECORDS],
+                        "_meta": _meta(config, endpoint, t0, len(resp.items)),
+                    }
+                )
+
+            if name == "liquid_estimate":
+                config = await _find(arguments["adapter_id"])
+                if config is None:
+                    return _ok({"error": f"adapter {arguments['adapter_id']} not found"})
+                est = await liquid.estimate_fetch(config, arguments.get("endpoint"))
+                return _ok({"estimate": est.model_dump(mode="json")})
 
             if name == "liquid_discover":
                 schema = await liquid.discover(arguments["url"], credentials=arguments.get("credentials"))
