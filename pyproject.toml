@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.35.0"
+version = "0.36.0"
 description = "Zapier for AI agents. Connect to any API on the fly."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -44,6 +44,9 @@ gemini = [
 ]
 anthropic = [
     "anthropic>=0.40",
+]
+litellm = [
+    "litellm>=1.0",
 ]
 dev = [
     "pytest>=8.0",

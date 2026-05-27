@@ -240,8 +240,11 @@ Claude Desktop / any MCP client:
 
 Tools: `liquid_connect` (discover + map any API), `liquid_fetch`, `liquid_query`
 (server-side search/aggregate), `liquid_list_adapters`, `liquid_discover`.
-Adapters and credentials persist under `~/.liquid`. Backed by your model — OpenAI,
-Gemini, Anthropic, or any OpenAI-compatible/local endpoint via `base_url`.
+Adapters and credentials persist under `~/.liquid`. Backed by **any LLM** — OpenAI,
+Gemini, Anthropic, any OpenAI-compatible/local endpoint via `base_url`, **any of
+100+ providers via LiteLLM** (`LIQUID_LLM_PROVIDER=litellm`,
+`LIQUID_LLM_MODEL=ollama/llama3` / `bedrock/...` / …), or, in code, **your own
+function** through `CallableBackend`.
 
 Real run — connecting to an API it had never seen, fully local:
 
