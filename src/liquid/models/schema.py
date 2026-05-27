@@ -58,6 +58,10 @@ class Endpoint(BaseModel):
     path: str
     method: str = "GET"
     description: str = ""
+    protocol: str = "http"
+    """Wire protocol used to reach this endpoint. Selects the transport driver
+    at fetch time (``http`` for REST/JSON, ``graphql``, ``soap``, ``grpc``,
+    ``ws`` …). Defaults to ``http`` so existing adapters keep REST behaviour."""
     kind: EndpointKind = EndpointKind.READ
     parameters: list[Parameter] = Field(default_factory=list)
     request_schema: dict[str, Any] | None = None
