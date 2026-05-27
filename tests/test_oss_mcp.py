@@ -7,12 +7,14 @@ import pytest
 
 from liquid.llm import (
     AnthropicBackend,
+    CallableBackend,
     GeminiBackend,
+    LiteLLMBackend,
     OpenAICompatibleBackend,
     llm_from_env,
 )
 from liquid.models.adapter import AdapterConfig, FieldMapping, SyncConfig
-from liquid.models.llm import Message
+from liquid.models.llm import LLMResponse, Message
 from liquid.models.schema import APISchema, AuthRequirement, Endpoint, EndpointKind
 from liquid.persistence import FileAdapterRegistry, FileVault
 
@@ -23,6 +25,7 @@ _LLM_ENV = [
     "GEMINI_API_KEY",
     "ANTHROPIC_API_KEY",
     "LIQUID_LLM_MODEL",
+    "LIQUID_LLM_PROVIDER",
 ]
 
 
@@ -75,6 +78,37 @@ async def test_openai_compatible_backend_chat():
     )
     resp = await backend.chat([Message(role="user", content="hi")])
     assert resp.content == "hello"
+
+
+async def test_callable_backend_messages_sync():
+    b = CallableBackend(lambda msgs: f"got {len(msgs)} msgs")
+    r = await b.chat([Message(role="user", content="hi")])
+    assert r.content == "got 1 msgs"
+
+
+async def test_callable_backend_as_text_and_async_and_llmresponse():
+    bt = CallableBackend(lambda prompt: prompt.upper(), as_text=True)
+    assert "USER: HI" in (await bt.chat([Message(role="user", content="hi")])).content
+
+    async def fn(_msgs):
+        return "async-out"
+
+    assert (await CallableBackend(fn).chat([Message(role="user", content="x")])).content == "async-out"
+
+    direct = CallableBackend(lambda _m: LLMResponse(content="direct"))
+    assert (await direct.chat([Message(role="user", content="x")])).content == "direct"
+
+
+def test_llm_from_env_provider_override(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LIQUID_LLM_PROVIDER", "litellm")
+    monkeypatch.setenv("LIQUID_LLM_MODEL", "anthropic/claude-3-5-sonnet")
+    b = llm_from_env()
+    assert isinstance(b, LiteLLMBackend) and b.model == "anthropic/claude-3-5-sonnet"
+
+    # forced openai-compatible even without a key set
+    monkeypatch.setenv("LIQUID_LLM_PROVIDER", "openai")
+    assert isinstance(llm_from_env(), OpenAICompatibleBackend)
 
 
 # --- FileVault --------------------------------------------------------------

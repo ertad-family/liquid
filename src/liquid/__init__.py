@@ -50,7 +50,14 @@ from liquid.exceptions import (
 )
 from liquid.intent import CANONICAL_INTENTS, Intent, IntentConfig, get_intent
 from liquid.intent import list_intents as list_canonical_intents
-from liquid.llm import AnthropicBackend, GeminiBackend, OpenAICompatibleBackend, llm_from_env
+from liquid.llm import (
+    AnthropicBackend,
+    CallableBackend,
+    GeminiBackend,
+    LiteLLMBackend,
+    OpenAICompatibleBackend,
+    llm_from_env,
+)
 from liquid.models import (
     ActionConfig,
     ActionError,
@@ -157,6 +164,7 @@ __all__ = [
     "BatchResult",
     "BearerAuth",
     "CacheStore",
+    "CallableBackend",
     "DataSink",
     "DeliveryResult",
     "DiscoveryError",
@@ -196,6 +204,7 @@ __all__ = [
     "LLMBackend",
     "Liquid",
     "LiquidError",
+    "LiteLLMBackend",
     "MappedRecord",
     "MappingError",
     "MismatchKind",
