@@ -3,8 +3,9 @@
 **Connect your AI agent to anything.**
 
 APIs, databases, and other agents — discovered automatically, read and write,
-through one stable, token-efficient, self-healing interface. AI is used **once**
-at setup; every call after is deterministic.
+through one stable, token-efficient, self-healing interface. No per-service
+connector to write or maintain: Liquid learns each one, and re-learns it when it
+changes.
 
 [![PyPI](https://img.shields.io/pypi/v/liquid-api.svg)](https://pypi.org/project/liquid-api/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/ertad-family/liquid/blob/main/LICENSE)
@@ -48,9 +49,10 @@ await liquid.write(db, "/public/orders", op="insert",
                    allow_write=True)               # opt-in; mutates the store
 ```
 
-An LLM is used only at setup — to learn an interface's shape and map its fields
-(databases introspect themselves, so they often need none). Every fetch/write
-after is pure, deterministic transport — no model in the hot path, predictable cost.
+You hand-write no connector and no schema: an LLM learns the interface once at
+setup (databases introspect themselves and skip even that), and the integration
+**repairs itself** when the upstream drifts. The runtime is plain deterministic
+transport — predictable cost, reproducible behavior, nothing to babysit.
 
 ## Built for the constraints real agents hit
 
@@ -89,9 +91,10 @@ normalize across `id` / `_id` / `uuid` / `*_id`.
 ### Canonical intents — one mental model across services
 
 ```python
-await liquid.execute_intent("charge_customer",
+await liquid.execute_intent(adapter, "charge_customer",
     {"customer_id": "cus_xyz", "amount_cents": 9999, "currency": "USD"})
-# Same intent on Stripe / Braintree / Square / Adyen
+# Same intent on Stripe / Braintree / Square / Adyen — 71 canonical intents
+
 ```
 
 ### Structured recovery — agents self-heal without parsing text
@@ -147,8 +150,7 @@ Full methodology + per-task breakdown: [`benchmarks/RESULTS.md`](benchmarks/RESU
 ## Install
 
 ```bash
-pip install liquid-api
-pip install 'liquid-api[mcp]'        # bundled self-hosted MCP server (liquid-mcp)
+pip install liquid-api               # core + bundled MCP server (the `liquid-mcp` command)
 pip install 'liquid-api[litellm]'    # any of 100+ LLM providers (or [gemini] / [anthropic])
 pip install 'liquid-api[grpc]'       # gRPC transport (reflection)
 pip install 'liquid-api[ws]'         # WebSocket transport
@@ -170,8 +172,8 @@ imported only when used.
 ## See it work — live, no pre-config
 
 Point Liquid at an API it has never seen (no adapter, no OpenAPI spec, no auth)
-and get typed records back. AI is used **once** for discovery + mapping; every
-fetch after is pure transport — runnable end to end via
+and get typed records back — you write no connector; discovery + mapping is the
+only place a model runs. Runnable end to end via
 [`examples/live_quickstart.py`](examples/live_quickstart.py):
 
 ```text
@@ -191,7 +193,9 @@ fetch() -> 50 typed records; first 3:
   LLM calls on 2nd fetch : 0
 ```
 
-Two model calls to learn the interface, then zero forever. That's the whole pitch.
+You wrote no connector, no schema, no auth glue — Liquid learned the interface
+for you, and will re-learn it if it changes. That's the point: integrations you
+don't build or babysit.
 
 ## Run as an MCP server (open source, self-hosted)
 
@@ -199,16 +203,17 @@ Expose the engine to any MCP client (Claude Desktop, Cursor, Claude Code) — it
 runs **in your own process**, no cloud, no account, no lock-in:
 
 ```bash
-pip install 'liquid-api[mcp]'
+pip install liquid-api
 export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY,
                                     # or OPENAI_BASE_URL=http://localhost:11434/v1 for local (Ollama/vLLM)
 liquid-mcp                          # or: python -m liquid.mcp_server
 ```
 
-Zero-install with `uvx` — Claude Code:
+Zero-install with `uvx` (the [`liquid-mcp`](https://pypi.org/project/liquid-mcp/)
+package makes the command run by name) — Claude Code:
 
 ```bash
-claude mcp add liquid --scope user -e OPENAI_API_KEY=sk-... -- uvx --from 'liquid-api[mcp]' liquid-mcp
+claude mcp add liquid --scope user -e OPENAI_API_KEY=sk-... -- uvx liquid-mcp
 ```
 
 Claude Desktop / any MCP client:
@@ -216,12 +221,12 @@ Claude Desktop / any MCP client:
 ```json
 { "mcpServers": { "liquid": {
   "command": "uvx",
-  "args": ["--from", "liquid-api[mcp]", "liquid-mcp"],
+  "args": ["liquid-mcp"],
   "env": { "OPENAI_API_KEY": "sk-..." }
 } } }
 ```
 
-(Or after `pip install 'liquid-api[mcp]'`, use `"command": "liquid-mcp"` directly.)
+(Or after `pip install liquid-api`, drop `uvx` and use `"command": "liquid-mcp"` directly.)
 
 <!-- mcp-name: io.github.ertad-family/liquid -->
 

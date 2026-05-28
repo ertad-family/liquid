@@ -2,8 +2,14 @@
 
 > Обратный поток данных: управление сервисом через API и загрузка данных.
 
-**Status:** Draft
+**Status:** Draft / historical design doc — **superseded by the shipped API.**
 **Date:** 2026-04-13
+
+> ⚠️ This is the original design sketch, kept for context. Some names here were
+> never shipped as written (e.g. `configure_action` — the real API configures
+> write actions via `create_adapter(..., actions=[...])`), and writes now also
+> cover databases (`Liquid.write(...)`). For the current API see the README and
+> [QUICKSTART](QUICKSTART.md).
 
 ---
 

@@ -1,18 +1,18 @@
 # Quickstart
 
-Liquid connects AI agents to any API. Point it at a URL, describe the data you want, and Liquid handles discovery, auth classification, field mapping, and a deterministic runtime — no LLM call per fetch.
+Liquid connects AI agents to any interface — web APIs, other agents (MCP/A2A), and databases. Point it at a URL or DSN, describe the data you want, and Liquid handles discovery, auth classification, and field mapping — so you never hand-write or maintain a connector, and it self-heals when the upstream changes.
 
 ## Install
 
 ```bash
-pip install liquid-api
+pip install liquid-api               # core + the bundled MCP server (liquid-mcp) + MCP discovery
 
 # Optional extras
-pip install "liquid-api[mcp]"        # run the bundled MCP server (liquid-mcp) + MCP discovery
 pip install "liquid-api[gemini]"     # Google Gemini backend
 pip install "liquid-api[anthropic]"  # Anthropic backend
 pip install "liquid-api[litellm]"    # any of 100+ providers via LiteLLM
 pip install "liquid-api[browser]"    # Playwright-backed discovery fallback
+pip install "liquid-api[pg]"         # Postgres / pgvector (also: mysql, neo4j, duckdb, mssql, mongodb, redis)
 ```
 
 Liquid ships **built-in LLM backends** — set `OPENAI_API_KEY` (or `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`, or a local `OPENAI_BASE_URL`) and call `llm_from_env()`. Reach any of 100+ providers with `LiteLLMBackend`, or bring your own by wrapping any function with `CallableBackend` or implementing the one-method `LLMBackend` protocol (see `EXTENDING.md`).
@@ -20,7 +20,7 @@ Liquid ships **built-in LLM backends** — set `OPENAI_API_KEY` (or `GEMINI_API_
 ## Run as an MCP server
 
 ```bash
-pip install "liquid-api[mcp]"
+pip install liquid-api
 export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY / local OPENAI_BASE_URL
 liquid-mcp                          # or: python -m liquid.mcp_server
 ```
@@ -231,7 +231,7 @@ result = await liquid.execute_intent(
 )
 ```
 
-Ten canonical intents ship today: `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `send_email`, `post_message`, `create_ticket`, `close_ticket`, `list_orders`, `cancel_order`. See `liquid.CANONICAL_INTENTS` for the full catalog. An adapter opts in by providing an `IntentConfig` binding it to a specific action or endpoint; the runtime handles the field translation.
+71 canonical intents ship today — e.g. `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `send_email`, `send_message`, `create_ticket`, `close_ticket`, `list_orders`, `cancel_order`. See `liquid.CANONICAL_INTENTS` for the full catalog. An adapter opts in by providing an `IntentConfig` binding it to a specific action or endpoint; the runtime handles the field translation.
 
 For shape consistency across every API, turn on output normalization:
 

@@ -86,17 +86,18 @@ One call. No manual orchestration. The adapter heals itself.
 
 ## The Numbers
 
-- **210 tests** passing
-- **~6,000 lines** of Python
-- **3 production dependencies**: pydantic, httpx, pyyaml
-- **2 optional extras**: `liquid[mcp]`, `liquid[browser]`
-- **Zero LLM calls** at runtime
+- **1,200+ tests** passing
+- **4 production dependencies**: pydantic, httpx, pyyaml, mcp
+- **Optional extras** for LLM providers (gemini / anthropic / litellm) and every
+  transport/database backend (grpc, ws, pg, mysql, neo4j, duckdb, mssql, mongodb,
+  redis, browser)
+- **Deterministic runtime** — no model-provider cost or keys after setup
 - **AGPL-3.0** license
 
 ## Try It
 
 ```bash
-pip install liquid  # coming to PyPI soon
+pip install liquid-api
 ```
 
 ```python
