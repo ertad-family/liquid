@@ -15,8 +15,10 @@ changes.
 
 ## What an agent can reach through Liquid
 
-One agent-facing API (`fetch` · `query` · `write`) over everything an agent might
-need to touch — Liquid figures out *how to talk to it* so the agent doesn't have to:
+One agent-facing API (`fetch` · `query` · `write` · `sense`) over everything an
+agent might need to touch — Liquid figures out *how to talk to it* so the agent
+doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
+`sense` perceives a live event stream, `write` acts on the world.
 
 - **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests

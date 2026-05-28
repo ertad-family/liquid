@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     import httpx
 
     from liquid.auth.schemes import AuthScheme
@@ -100,6 +102,48 @@ class WriteContext:
     idempotency_key: str | None = None
 
 
+@dataclass(slots=True)
+class SenseEvent:
+    """One perceived signal from the world — the afferent counterpart of a write.
+
+    Deliberately **modality-agnostic**: ``modality`` tags what kind of signal this
+    is (``"data"`` for a row/record/message — the default today; later ``"audio"``,
+    ``"telemetry"``, ``"scent"``, … as agents grow new senses), and ``payload`` is
+    an open dict so a new modality needs no schema change. ``source`` identifies
+    where it came from (endpoint path / channel); ``cursor`` lets a consumer resume
+    a stream where it left off.
+    """
+
+    source: str
+    payload: dict[str, Any]
+    modality: str = "data"
+    cursor: str | None = None
+
+
+@dataclass(slots=True)
+class SenseContext:
+    """Everything a driver needs to perceive a stream of events from an endpoint.
+
+    Like :class:`FetchContext` but for the *continuous* afferent direction. The
+    driver resolves its own connection (DSN from the vault, as on read) and yields
+    :class:`SenseEvent`s until the bounds are hit. ``cursor`` resumes a delta
+    source; ``poll_interval`` paces pollers; ``max_events`` / ``max_seconds`` bound
+    the stream so a caller can't block forever (``None`` = unbounded).
+    """
+
+    endpoint: Endpoint
+    base_url: str
+    params: dict[str, Any]
+    vault: Vault
+    auth_ref: str
+    cursor: str | None = None
+    poll_interval: float = 2.0
+    max_events: int | None = None
+    max_seconds: float | None = None
+    auth: httpx.Auth | None = None
+    http_client: httpx.AsyncClient | None = None
+
+
 @runtime_checkable
 class ProtocolDriver(Protocol):
     """Performs a single wire call for one protocol."""
@@ -125,6 +169,26 @@ class WriteDriver(Protocol):
 def supports_write(driver: object) -> bool:
     """Whether ``driver`` can perform writes (implements :class:`WriteDriver`)."""
     return isinstance(driver, WriteDriver)
+
+
+@runtime_checkable
+class SenseDriver(Protocol):
+    """A driver that can *perceive* — yield a live stream of events from an endpoint.
+
+    Optional, like :class:`WriteDriver`. Drivers implement it in addition to
+    :class:`ProtocolDriver`; the client checks ``isinstance(driver, SenseDriver)``
+    and declines otherwise. This is the afferent organ — the agent's senses — to
+    ``write``'s efferent hands.
+    """
+
+    scheme: str
+
+    def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]: ...
+
+
+def supports_sense(driver: object) -> bool:
+    """Whether ``driver`` can perceive (implements :class:`SenseDriver`)."""
+    return isinstance(driver, SenseDriver)
 
 
 _REGISTRY: dict[str, ProtocolDriver] = {}

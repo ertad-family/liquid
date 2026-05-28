@@ -12,6 +12,17 @@ def test_catalog_is_read_only_by_default():
     assert {"liquid_connect", "liquid_fetch", "liquid_query"} <= names
 
 
+def test_sense_tool_always_available_and_read_only():
+    # Perception ships in the default surface (no write gate) and is read-only.
+    tools = {t.name: t for t in _tool_definitions()}
+    assert "liquid_sense" in tools
+    s = tools["liquid_sense"]
+    assert s.annotations.readOnlyHint is True
+    assert s.annotations.destructiveHint is False
+    assert s.inputSchema["required"] == ["adapter_id"]
+    assert {"cursor", "max_events", "max_seconds"} <= set(s.inputSchema["properties"])
+
+
 def test_execute_listed_when_writes_allowed():
     tools = {t.name: t for t in _tool_definitions(allow_writes=True)}
     assert "liquid_execute" in tools

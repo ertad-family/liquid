@@ -353,6 +353,59 @@ def _tool_definitions(allow_writes: bool = False) -> list:
                 }
             ),
         ),
+        Tool(
+            name="liquid_sense",
+            title="Check the agent's senses (poll for new events)",
+            description=(
+                "Perceive what's happened in the world since you last checked: poll an endpoint for events that "
+                "occurred after `cursor` — new database rows, published messages, etc. Returns a batch of events "
+                "(each with a `modality`, a `payload`, and a `cursor`) plus a `next_cursor` to resume from. This "
+                "is the read side of the agent's senses — call it repeatedly, passing back the last `next_cursor`, "
+                "to stay aware of changes without re-seeing old events. Bounded by `max_events` / `max_seconds` so "
+                "it always returns promptly. Where liquid_fetch is a one-shot pull of current state, liquid_sense "
+                "perceives what changed since last check. Requires an adapter_id from liquid_connect. Only "
+                "sense-capable endpoints support it (e.g. SQLite tables, Redis channels); others return an error. "
+                "Read-only — it perceives, it does not change anything."
+            ),
+            annotations=ToolAnnotations(
+                title="Check the agent's senses (poll for new events)",
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=False,
+                openWorldHint=True,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "adapter_id": adapter_id,
+                    "endpoint": endpoint,
+                    "cursor": {
+                        "type": "string",
+                        "description": "Resume token from a previous call's next_cursor; omit to start from now.",
+                    },
+                    "max_events": {
+                        "type": "number",
+                        "description": "Max events to return this call (default 50).",
+                    },
+                    "max_seconds": {
+                        "type": "number",
+                        "description": "Max seconds to wait for events before returning (default 5).",
+                    },
+                },
+                "required": ["adapter_id"],
+            },
+            outputSchema=_out(
+                {
+                    "events": {
+                        "type": "array",
+                        "description": "Perceived events; each has modality, payload, cursor.",
+                        "items": {"type": "object", "additionalProperties": True},
+                    },
+                    "count": {"type": "number"},
+                    "next_cursor": {"type": "string", "description": "Pass as `cursor` next call to resume."},
+                }
+            ),
+        ),
     ]
 
     if allow_writes:
@@ -523,6 +576,28 @@ def create_server():
                     return _ok({"error": f"adapter {arguments['adapter_id']} not found"})
                 est = await liquid.estimate_fetch(config, arguments.get("endpoint"))
                 return _ok({"estimate": est.model_dump(mode="json")})
+
+            if name == "liquid_sense":
+                config = await _find(arguments["adapter_id"])
+                if config is None:
+                    return _ok({"error": f"adapter {arguments['adapter_id']} not found"})
+                # Bounded drain-by-pull: return events accumulated since `cursor`,
+                # capped so a single tool call always returns promptly.
+                max_events = int(arguments.get("max_events") or 50)
+                max_seconds = float(arguments.get("max_seconds") or 5)
+                events: list = []
+                next_cursor = arguments.get("cursor")
+                stream = await liquid.sense(
+                    config,
+                    arguments.get("endpoint"),
+                    cursor=arguments.get("cursor"),
+                    max_events=max_events,
+                    max_seconds=max_seconds,
+                )
+                async for ev in stream:
+                    events.append({"modality": ev.modality, "payload": ev.payload, "cursor": ev.cursor})
+                    next_cursor = ev.cursor
+                return _ok({"events": events, "count": len(events), "next_cursor": next_cursor})
 
             if name == "liquid_execute":
                 if not allow_writes:
