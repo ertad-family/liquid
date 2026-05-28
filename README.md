@@ -202,6 +202,11 @@ don't build or babysit.
 Expose the engine to any MCP client (Claude Desktop, Cursor, Claude Code) — it
 runs **in your own process**, no cloud, no account, no lock-in:
 
+[![Add to Cursor](https://img.shields.io/badge/Add%20to-Cursor-000?logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=liquid&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJsaXF1aWQtbWNwIl19)
+
+One-click in Cursor (the button writes the server into your `mcp.json`; add your
+`OPENAI_API_KEY` in Cursor's MCP settings afterward). Or set it up manually:
+
 ```bash
 pip install liquid-api
 export OPENAI_API_KEY=sk-...        # or GEMINI_API_KEY / ANTHROPIC_API_KEY,
