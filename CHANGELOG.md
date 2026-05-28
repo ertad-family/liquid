@@ -2,6 +2,28 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.46.0] - 2026-05-28
+
+### Added — declarative dialect manifests (add a SQL backend as data)
+A SQL backend can now be defined as **data** instead of a Python module, reusing
+the shared SQL core plus a generic DBAPI2 connector. This is the realistic
+"learn an interface on the fly" for the SQL/text family — a manifest can even be
+fetched from the network as JSON.
+
+- `liquid.transport.manifest.DialectManifest`: name, schemes, DBAPI2 module,
+  introspection SQL (+ optional PK SQL), dialect (quote open/close, paramstyle,
+  pagination), connect style (`dsn` | `path`), and declarative error rules
+  (`{contains|sqlstate_prefix, status}`).
+- `register_sql_manifest({...})` (exported at the top level) installs a
+  `ManifestDriver` (under the manifest name as the protocol) and makes it
+  discoverable via the new `ManifestDiscovery` in the pipeline. `load_manifest`,
+  `unregister_manifest`, `registered_manifests` round out the API.
+- The generic DBAPI2 connector runs any PEP 249 module (psycopg, duckdb,
+  pymysql, pyodbc, …) off-thread; the module is imported only when used, so the
+  core stays dependency-free. A no-op when no manifests are registered.
+- Verified end-to-end in-process: a DuckDB backend defined purely as a manifest
+  (under a manifest-only scheme) → discovery → Fetcher → real SELECT.
+
 ## [0.45.0] - 2026-05-28
 
 ### Added — protocol fingerprinting (meta-discovery)
