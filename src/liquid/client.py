@@ -18,6 +18,7 @@ from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.plugin_manifest import PluginManifestDiscovery
+from liquid.discovery.postgres import PostgresDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
 from liquid.discovery.websocket import WSDiscovery
 from liquid.discovery.wsdl import WSDLDiscovery
@@ -317,6 +318,9 @@ class Liquid:
         try:
             pipeline = DiscoveryPipeline(
                 [
+                    # A Postgres DSN can't be probed over HTTP — match it first so a
+                    # `postgres://` URL short-circuits before the wire/HTTP strategies.
+                    PostgresDiscovery(),
                     GRPCDiscovery(),
                     WSDiscovery(),
                     MCPDiscovery(),
