@@ -1,11 +1,11 @@
 [project]
 name = "liquid-api"
-version = "0.42.0"
+version = "0.43.0"
 description = "Zapier for AI agents. Connect to any API on the fly."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
-keywords = ["api", "discovery", "sync", "adapter", "openapi", "graphql", "mcp", "llm", "ai", "postgres", "mysql", "sqlite", "sql", "neo4j", "graph", "database"]
+keywords = ["api", "discovery", "sync", "adapter", "openapi", "graphql", "mcp", "llm", "ai", "postgres", "mysql", "sqlite", "sql", "neo4j", "graph", "duckdb", "mssql", "database"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -70,6 +70,14 @@ mysql = [
 neo4j = [
     # Neo4j graph-as-an-interface: labels/relationship types as endpoints, Cypher.
     "neo4j>=5.0",
+]
+duckdb = [
+    # DuckDB-as-an-interface (embedded analytics DB; sync client run off-thread).
+    "duckdb>=0.10",
+]
+mssql = [
+    # SQL Server-as-an-interface over ODBC. Also needs a system ODBC driver.
+    "aioodbc>=0.4",
 ]
 dev = [
     "pytest>=8.0",

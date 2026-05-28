@@ -15,10 +15,12 @@ from liquid.transport.base import (
     get_driver,
     register_driver,
 )
+from liquid.transport.duckdb_driver import DuckDBDriver
 from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.grpc_driver import GRPCDriver
 from liquid.transport.http import HTTPDriver
 from liquid.transport.mcp_driver import MCPDriver
+from liquid.transport.mssql import MSSQLDriver
 from liquid.transport.mysql import MySQLDriver
 from liquid.transport.neo4j_driver import Neo4jDriver
 from liquid.transport.postgres import PostgresDriver
@@ -37,15 +39,19 @@ register_driver(PostgresDriver())
 register_driver(MySQLDriver())
 register_driver(SQLiteDriver())
 register_driver(Neo4jDriver())
+register_driver(DuckDBDriver())
+register_driver(MSSQLDriver())
 
 __all__ = [
     "A2ADriver",
     "DriverResponse",
+    "DuckDBDriver",
     "FetchContext",
     "GRPCDriver",
     "GraphQLDriver",
     "HTTPDriver",
     "MCPDriver",
+    "MSSQLDriver",
     "MySQLDriver",
     "Neo4jDriver",
     "PostgresDriver",

@@ -13,9 +13,11 @@ from liquid.discovery.a2a import A2ADiscovery
 from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
 from liquid.discovery.diff import diff_schemas
+from liquid.discovery.duckdb import DuckDBDiscovery
 from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.mcp import MCPDiscovery
+from liquid.discovery.mssql import MSSQLDiscovery
 from liquid.discovery.mysql import MySQLDiscovery
 from liquid.discovery.neo4j import Neo4jDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
@@ -322,12 +324,15 @@ class Liquid:
             pipeline = DiscoveryPipeline(
                 [
                     # Database DSNs can't be probed over HTTP — match them first so a
-                    # `postgres://` / `mysql://` / `sqlite://` / `neo4j://` URL
-                    # short-circuits before the wire/HTTP strategies.
+                    # `postgres://` / `mysql://` / `sqlite://` / `neo4j://` /
+                    # `duckdb://` / `mssql://` URL short-circuits before the
+                    # wire/HTTP strategies.
                     PostgresDiscovery(),
                     MySQLDiscovery(),
                     SQLiteDiscovery(),
                     Neo4jDiscovery(),
+                    DuckDBDiscovery(),
+                    MSSQLDiscovery(),
                     GRPCDiscovery(),
                     WSDiscovery(),
                     MCPDiscovery(),

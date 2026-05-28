@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from liquid.transport._sql import (
+    DUCKDB,
+    MSSQL,
     MYSQL,
     POSTGRES,
     SQLITE,
@@ -57,6 +59,31 @@ def test_build_plain_select_ignores_unknown_keys():
     sql, args, *_ = build_plain_select(META, {"bogus": 1, "limit": 2}, None, SQLITE, RESERVED)
     assert "WHERE" not in sql
     assert args == [2, 0]
+
+
+def test_build_plain_select_duckdb():
+    sql, args, *_ = build_plain_select(META, {"limit": 3}, None, DUCKDB, RESERVED)
+    assert sql == 'SELECT * FROM "app"."users" LIMIT ? OFFSET ?'
+    assert args == [3, 0]
+
+
+def test_quote_ident_mssql_brackets():
+    assert quote_ident("col", MSSQL) == "[col]"
+    # the closing bracket is what gets escaped
+    assert quote_ident("we]ird", MSSQL) == "[we]]ird]"
+
+
+def test_build_plain_select_mssql_offset_fetch():
+    sql, args, *_ = build_plain_select(META, {"limit": 5}, "10", MSSQL, RESERVED)
+    assert sql == "SELECT * FROM [app].[users] ORDER BY (SELECT NULL) OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
+    assert args == [10, 5]  # MSSQL binds offset before the row count
+
+
+def test_build_plain_select_mssql_with_filter():
+    sql, args, *_ = build_plain_select(META, {"name": "x"}, None, MSSQL, RESERVED)
+    assert sql.startswith("SELECT * FROM [app].[users] WHERE [name] = ?")
+    assert sql.endswith("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY")
+    assert args == ["x", 0, 1000]
 
 
 def test_is_dsn():

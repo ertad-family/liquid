@@ -2,6 +2,25 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.43.0] - 2026-05-28
+
+### Added — more SQL backends: DuckDB + SQL Server
+Two more relational backends on the shared, dialect-aware SQL core. The `Dialect`
+gained identifier quote open/close (for SQL Server's `[brackets]`) and a
+pagination style, so a backend is now a thin adapter.
+
+- **DuckDB** (`DuckDBDiscovery` + `DuckDBDriver`): introspects `information_schema`
+  and reads via the embedded DuckDB engine off-thread (sync client, like SQLite).
+  `duckdb://` URLs, opened read-only. New extra `liquid-api[duckdb]`. Covered by a
+  real, in-process end-to-end test (discovery → Fetcher → SELECT).
+- **SQL Server** (`MSSQLDiscovery` + `MSSQLDriver`): introspects
+  `INFORMATION_SCHEMA` over aioodbc; reads with bracket-quoted identifiers and
+  `OFFSET … ROWS FETCH NEXT … ROWS ONLY` pagination (no `LIMIT` in T-SQL). ODBC
+  connection string built from a `mssql://user:pass@host:port/db` DSN (override
+  the ODBC driver with `?driver=...`). SQLSTATE → HTTP-like codes (28xxx→401,
+  42S02→404, 08xxx→503). New extra `liquid-api[mssql]` (also needs a system ODBC
+  driver). Unit-tested; the live path needs a SQL Server instance.
+
 ## [0.42.0] - 2026-05-28
 
 ### Added — graph databases: Neo4j / Cypher
