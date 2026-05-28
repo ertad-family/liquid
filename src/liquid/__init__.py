@@ -122,6 +122,7 @@ from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
 from liquid.sync.rate_limiter import RateLimiter
 from liquid.tools import adapter_to_tools
+from liquid.transport.manifest import DialectManifest, register_sql_manifest
 from liquid.validation import MismatchKind, ResponseValidator, SchemaMismatchSignal
 from liquid.verbosity import VerbosityLevel, apply_verbosity
 from liquid.webhooks import (
@@ -167,6 +168,7 @@ __all__ = [
     "CallableBackend",
     "DataSink",
     "DeliveryResult",
+    "DialectManifest",
     "DiscoveryError",
     "DuplicateEventError",
     "Email",
@@ -278,6 +280,7 @@ __all__ = [
     "normalize_user_ref",
     "parse_ndjson",
     "parse_sse",
+    "register_sql_manifest",
     "search_async",
     "search_nl",
     "search_records",

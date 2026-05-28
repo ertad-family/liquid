@@ -122,6 +122,7 @@ class APISchema(BaseModel):
         "mssql",
         "mongodb",
         "redis",
+        "manifest",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement

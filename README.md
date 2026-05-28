@@ -407,6 +407,14 @@ mapping, recovery, cache, rate limits) is identical across all of them:
 | MongoDB (document) | ✅ collections as endpoints, field filters, pagination | `liquid-api[mongodb]` |
 | Redis (key-value) | ✅ keyspace namespaces as endpoints, typed values, SCAN-cursor paging | `liquid-api[redis]` |
 
+**Add a SQL backend without writing code.** For the SQL family the contract is
+declarative enough to be *data*: a **dialect manifest** specifies quoting,
+placeholder style, pagination, introspection SQL, an error map, and a DBAPI2
+module — and `register_sql_manifest({...})` installs a working driver +
+discovery for it. So a new SQL / wire-compatible store (CockroachDB, ClickHouse,
+any DBAPI2 driver) — even one fetched from the network as JSON — connects without
+a release. (Binary authenticated protocols still need real, reviewed drivers.)
+
 New protocols plug in via the `liquid.transport.ProtocolDriver` protocol. The
 abstraction is the same for wire protocols (REST/GraphQL/SOAP/gRPC/WS), agent
 protocols (MCP/A2A), relational databases (Postgres/MySQL/SQLite/DuckDB/SQL
