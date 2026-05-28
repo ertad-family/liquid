@@ -21,8 +21,8 @@ import logging
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from liquid.transport._sql import coerce_limit, coerce_offset, coerce_value, is_dsn
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport._sql import WriteError, coerce_limit, coerce_offset, coerce_value, is_dsn
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,82 @@ class Neo4jDriver:
         offset = params["_skip"]
         next_cursor = str(offset + limit) if len(rows) >= limit else None
         return DriverResponse(status_code=200, records=records, next_cursor=next_cursor)
+
+    async def write(self, ctx: WriteContext) -> DriverResponse:
+        import neo4j
+
+        meta = ctx.endpoint.transport_meta or {}
+        uri, user, password, database = await _resolve_conn(ctx)
+        if not uri:
+            return DriverResponse(status_code=503, error_body="no Neo4j connection URI")
+        try:
+            cypher, params, op = _build_write_cypher(meta, ctx.op, ctx.values or {}, ctx.where or {})
+        except WriteError as e:
+            return DriverResponse(status_code=400, error_body=str(e)[:500])
+
+        auth = (user, password) if user is not None else None
+        try:
+            driver = neo4j.AsyncGraphDatabase.driver(uri, auth=auth)
+        except Exception as e:
+            return _map_neo4j_error(e, on_connect=True)
+        try:
+            async with driver.session(database=database) as session:
+                result = await session.run(cypher, **params)
+                if op == "delete":
+                    summary = await result.consume()
+                    affected = summary.counters.nodes_deleted
+                else:
+                    record = await result.single()
+                    affected = record["affected"] if record else 0
+        except Exception as e:
+            return _map_neo4j_error(e)
+        finally:
+            await driver.close()
+        return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
+
+
+def _build_write_cypher(
+    meta: dict[str, Any],
+    op: str,
+    values: dict[str, Any],
+    where: dict[str, Any],
+) -> tuple[str, dict[str, Any], str]:
+    """Compose a write Cypher statement for a node label.
+
+    Node CRUD only (relationship writes need start/end nodes — out of scope for
+    now). Labels / property keys are backtick-quoted; every value rides a named
+    parameter. ``update`` / ``delete`` require a non-empty ``where`` (no blanket
+    mutations). Returns ``(cypher, params, op)``.
+    """
+    if meta.get("kind", "node") != "node":
+        raise WriteError("only node writes are supported (relationship writes need start/end nodes)")
+    label = _quote(meta["label"])
+    params: dict[str, Any] = {}
+
+    def add(value: Any) -> str:
+        name = f"p{len(params)}"
+        params[name] = value
+        return name
+
+    if op == "insert":
+        if not values:
+            raise WriteError("insert requires values")
+        props = ", ".join(f"{_quote(k)}: ${add(v)}" for k, v in values.items())
+        return f"CREATE (n:{label} {{{props}}}) RETURN count(n) AS affected", params, op
+    if op == "update":
+        if not where:
+            raise WriteError("update requires a non-empty where")
+        if not values:
+            raise WriteError("update requires values")
+        where_sql = " AND ".join(f"n.{_quote(k)} = ${add(v)}" for k, v in where.items())
+        set_sql = ", ".join(f"n.{_quote(k)} = ${add(v)}" for k, v in values.items())
+        return f"MATCH (n:{label}) WHERE {where_sql} SET {set_sql} RETURN count(n) AS affected", params, op
+    if op == "delete":
+        if not where:
+            raise WriteError("delete requires a non-empty where")
+        where_sql = " AND ".join(f"n.{_quote(k)} = ${add(v)}" for k, v in where.items())
+        return f"MATCH (n:{label}) WHERE {where_sql} DETACH DELETE n", params, op
+    raise WriteError(f"unsupported op {op!r} (expected insert/update/delete)")
 
 
 def _build_cypher(

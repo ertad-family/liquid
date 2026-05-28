@@ -3,8 +3,12 @@ the live path is exercised in tests/test_discovery/test_neo4j.py."""
 
 from __future__ import annotations
 
+import pytest
+
+from liquid.transport._sql import WriteError
 from liquid.transport.neo4j_driver import (
     _build_cypher,
+    _build_write_cypher,
     _entity_to_dict,
     _quote,
     _split_conn,
@@ -67,3 +71,39 @@ def test_entity_to_dict_returns_properties():
         "title": "The Matrix",
         "released": 1999,
     }
+
+
+NODE = {"kind": "node", "label": "Movie"}
+
+
+def test_build_write_cypher_insert():
+    cy, params, op = _build_write_cypher(NODE, "insert", {"title": "M", "year": 1999}, {})
+    assert cy == "CREATE (n:`Movie` {`title`: $p0, `year`: $p1}) RETURN count(n) AS affected"
+    assert params == {"p0": "M", "p1": 1999}
+    assert op == "insert"
+
+
+def test_build_write_cypher_update_where_then_set():
+    cy, params, _ = _build_write_cypher(NODE, "update", {"year": 2000}, {"title": "M"})
+    assert cy == "MATCH (n:`Movie`) WHERE n.`title` = $p0 SET n.`year` = $p1 RETURN count(n) AS affected"
+    assert params == {"p0": "M", "p1": 2000}
+
+
+def test_build_write_cypher_delete():
+    cy, params, _ = _build_write_cypher(NODE, "delete", {}, {"title": "M"})
+    assert cy == "MATCH (n:`Movie`) WHERE n.`title` = $p0 DETACH DELETE n"
+    assert params == {"p0": "M"}
+
+
+def test_build_write_cypher_requires_where_for_update_delete():
+    with pytest.raises(WriteError):
+        _build_write_cypher(NODE, "update", {"a": 1}, {})
+    with pytest.raises(WriteError):
+        _build_write_cypher(NODE, "delete", {}, {})
+
+
+def test_build_write_cypher_rejects_relationship_and_bad_op():
+    with pytest.raises(WriteError):
+        _build_write_cypher({"kind": "relationship", "rel_type": "ACTED_IN"}, "insert", {"x": 1}, {})
+    with pytest.raises(WriteError):
+        _build_write_cypher(NODE, "upsert", {}, {})
