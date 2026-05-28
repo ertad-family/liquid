@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.42.0] - 2026-05-28
+
+### Added — graph databases: Neo4j / Cypher
+Extends the database layer beyond relational to a *graph* model, through the same
+`ProtocolDriver` abstraction. Where SQL has tables, a graph has node **labels**
+and relationship **types** — each becomes a read endpoint.
+
+- **`Neo4jDiscovery`** introspects `db.labels()` / `db.relationshipTypes()` and
+  (best-effort) the schema procedures for property keys, over the official async
+  neo4j driver. Each label → `/node/<Label>`, each type → `/rel/<TYPE>`, with
+  `transport_meta` (`kind`, `label`/`rel_type`, `properties`).
+- **`Neo4jDriver`** runs the matching Cypher: `MATCH (n:Label) [WHERE n.prop =
+  $p] RETURN n SKIP $_skip LIMIT $_limit` (and the `()-[r:TYPE]->()` form for
+  relationships). Equality filters on properties, SKIP/LIMIT pagination
+  (cursor = next offset). Labels/types are backtick-quoted from introspection;
+  property filters ride named parameters — no injection surface. neo4j
+  exceptions map onto HTTP-like codes (auth → 401, forbidden → 403, …).
+- Accepts Bolt DSNs (`neo4j://` / `bolt://` + `+s`/`+ssc` TLS variants) with
+  optional `user:pass` and `/database`; the persisted URL is credential-redacted
+  and the password is resolved from the vault at fetch. New extra
+  `liquid-api[neo4j]`. Live-verified against the public Neo4j demo server.
+
+This rounds out the database set the project set out to cover (SQL → Postgres /
+pgvector / MySQL / SQLite → graph).
+
 ## [0.41.0] - 2026-05-28
 
 ### Added — generic SQL: MySQL / MariaDB + SQLite
