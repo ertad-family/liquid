@@ -184,3 +184,64 @@ async def test_mcp_server_builds_and_lists_tools(tmp_path, monkeypatch):
 
     server = create_server()  # builds the in-process engine (llm=None ok) without raising
     assert server.name == "liquid"
+
+
+def test_tool_definitions_are_well_documented():
+    """Every tool ships annotations, an output schema, and a description on every
+    input parameter — the things agents (and Glama's scorer) need to call well."""
+    pytest.importorskip("mcp")
+    from liquid.mcp_server import _tool_definitions
+
+    tools = {t.name: t for t in _tool_definitions()}
+    assert set(tools) == {
+        "liquid_connect",
+        "liquid_list_adapters",
+        "liquid_fetch",
+        "liquid_query",
+        "liquid_discover",
+        "liquid_estimate",
+    }
+
+    for name, tool in tools.items():
+        assert tool.title, f"{name} missing title"
+        assert tool.annotations is not None, f"{name} missing annotations"
+        assert tool.outputSchema is not None, f"{name} missing outputSchema"
+        assert len(tool.description) > 120, f"{name} description too thin"
+        # Mentions a sibling tool → gives the agent selection/usage guidance.
+        assert "liquid_" in tool.description.replace(name, ""), f"{name} gives no cross-tool guidance"
+        # Full parameter-description coverage (the dimension that scored 0%).
+        for pname, prop in tool.inputSchema.get("properties", {}).items():
+            assert prop.get("description"), f"{name}.{pname} parameter has no description"
+
+    # Behavioural annotations are accurate per tool.
+    assert tools["liquid_fetch"].annotations.readOnlyHint is True
+    assert tools["liquid_fetch"].annotations.openWorldHint is True
+    assert tools["liquid_connect"].annotations.readOnlyHint is False
+    assert tools["liquid_connect"].annotations.openWorldHint is True
+    assert tools["liquid_estimate"].annotations.openWorldHint is False  # no HTTP call
+    assert tools["liquid_list_adapters"].annotations.openWorldHint is False  # local only
+
+
+def test_tool_outputs_validate_against_their_schemas():
+    """Representative success + error results validate against each declared
+    outputSchema — the MCP SDK validates structuredContent, so a mismatch would
+    fail the tool call at runtime (e.g. liquid_fetch returning a bare object)."""
+    pytest.importorskip("mcp")
+    jsonschema = pytest.importorskip("jsonschema")
+    from liquid.mcp_server import _tool_definitions
+
+    tools = {t.name: t for t in _tool_definitions()}
+    samples = {
+        "liquid_connect": [
+            {"status": "connected", "adapter_id": "a1", "service": "X", "mapped_fields": ["id"], "endpoints": ["/x"]},
+            {"status": "review_needed", "detail": "..."},
+        ],
+        "liquid_list_adapters": [{"adapters": [{"adapter_id": "a1"}]}],
+        "liquid_fetch": [{"records": 1, "data": [{"id": 1}], "_meta": {}}, {"data": {"k": "v"}, "_meta": {}}],
+        "liquid_query": [{"records": 1, "data": [{"id": 1}], "_meta": {}}, {"result": {"g": 3}, "_meta": {}}],
+        "liquid_discover": [{"service": "X", "discovery_method": "graphql", "auth_type": "bearer", "endpoints": []}],
+        "liquid_estimate": [{"estimate": {"items": 10}}],
+    }
+    for name, tool in tools.items():
+        for result in [*samples[name], {"error": "RuntimeError: boom"}]:
+            jsonschema.validate(result, tool.outputSchema)  # raises on mismatch

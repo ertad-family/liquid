@@ -40,19 +40,324 @@ def _build_liquid() -> tuple[Liquid, FileAdapterRegistry]:
     return liquid, registry
 
 
+def _tool_definitions() -> list:
+    """The MCP tool catalog.
+
+    Kept as a standalone function (not inlined in ``list_tools``) so the schemas,
+    per-parameter docs, annotations and output schemas can be unit-tested without
+    standing up a server. Every parameter carries a ``description`` (agents get no
+    help from a bare ``{"type": "string"}``), every tool declares behavioural
+    annotations (read-only / open-world / idempotent), and every tool has an
+    output schema so an agent knows the return shape before it calls.
+    """
+    from mcp.types import Tool, ToolAnnotations
+
+    target_model = {
+        "type": "object",
+        "description": (
+            "The record shape you want back: a flat map of field name -> type, e.g. "
+            '{"name": "str", "price": "float", "in_stock": "bool"}. Liquid maps the API\'s raw '
+            "response onto exactly these fields; everything else is dropped."
+        ),
+        "additionalProperties": {"type": "string"},
+    }
+    credentials = {
+        "type": "object",
+        "description": (
+            'Optional secrets for an auth-walled API, e.g. {"api_key": "..."}, {"token": "..."}, '
+            'or {"username": "...", "password": "..."}. Stored encrypted under ~/.liquid and applied '
+            "automatically on every later fetch. Omit for public APIs."
+        ),
+    }
+    adapter_id = {
+        "type": "string",
+        "description": "An adapter id returned by liquid_connect (or listed by liquid_list_adapters).",
+    }
+    endpoint = {
+        "type": "string",
+        "description": (
+            'Optional endpoint path to act on (e.g. "/users"); defaults to the adapter\'s primary '
+            "endpoint. Use a path shown by liquid_connect / liquid_list_adapters."
+        ),
+    }
+    meta_schema = {
+        "type": "object",
+        "description": "Call metadata: adapter_id, service, endpoint, latency_ms (and records when applicable).",
+        "additionalProperties": True,
+    }
+
+    def _out(props: dict) -> dict:
+        # Permissive: extra keys allowed (e.g. an "error" string on failure) and nothing required,
+        # so both success and error results validate against the declared output schema.
+        return {"type": "object", "properties": {**props, "error": {"type": "string"}}, "additionalProperties": True}
+
+    return [
+        Tool(
+            name="liquid_connect",
+            title="Connect to an API (one-time setup)",
+            description=(
+                "One-time setup for an API. Discovers the API at `url`, uses an LLM to map its responses "
+                "onto your `target_model`, and saves a reusable adapter; returns an `adapter_id` you then "
+                "pass to liquid_fetch / liquid_query / liquid_estimate. "
+                "Side effects: makes outbound HTTP(S) requests to `url`, calls the configured LLM (requires "
+                "an API key), and persists the adapter + any credentials under ~/.liquid. Idempotent — "
+                "re-connecting the same url+target_model reuses the existing adapter instead of duplicating it. "
+                "Use this once per API. For a quick look without saving anything, use liquid_discover instead; "
+                "to read data from an already-connected API, use liquid_fetch."
+            ),
+            annotations=ToolAnnotations(
+                title="Connect to an API (one-time setup)",
+                readOnlyHint=False,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=True,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "Base URL or a specific endpoint of the API (e.g. https://api.example.com or "
+                            "https://api.example.com/v1/users). Also accepts a GraphQL endpoint, a WSDL URL, "
+                            "or grpc:// / wss:// targets."
+                        ),
+                    },
+                    "target_model": target_model,
+                    "credentials": credentials,
+                },
+                "required": ["url", "target_model"],
+            },
+            outputSchema=_out(
+                {
+                    "status": {"type": "string", "description": '"connected" or "review_needed".'},
+                    "adapter_id": {"type": "string", "description": "Use this id with liquid_fetch/liquid_query."},
+                    "service": {"type": "string"},
+                    "mapped_fields": {"type": "array", "items": {"type": "string"}},
+                    "endpoints": {"type": "array", "items": {"type": "string"}},
+                }
+            ),
+        ),
+        Tool(
+            name="liquid_list_adapters",
+            title="List connected adapters",
+            description=(
+                "List the adapters already connected on this machine (read from ~/.liquid) — read-only, no "
+                "network call, no LLM. Each entry has its adapter_id, service name, source url and endpoint "
+                "paths. Call this to find an adapter_id for liquid_fetch / liquid_query / liquid_estimate, or "
+                "to check whether an API is already connected before calling liquid_connect."
+            ),
+            annotations=ToolAnnotations(
+                title="List connected adapters",
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
+            inputSchema={"type": "object", "properties": {}},
+            outputSchema=_out(
+                {
+                    "adapters": {
+                        "type": "array",
+                        "description": "Connected adapters with adapter_id, service, url, endpoints.",
+                        "items": {"type": "object", "additionalProperties": True},
+                    }
+                }
+            ),
+        ),
+        Tool(
+            name="liquid_fetch",
+            title="Fetch records through an adapter",
+            description=(
+                "Fetch records through a connected adapter, mapped to the target_model you set at connect "
+                "time — deterministic, no LLM call. Side effects: makes a read-only outbound HTTP(S) request "
+                "to the connected API using the stored credentials; it is subject to that API's rate limits "
+                "(Liquid throttles proactively and surfaces 429s with retry hints). Returns "
+                "{records, data: [up to 100 mapped records], _meta}. Requires an adapter_id from liquid_connect. "
+                "Use this to pull whole records; to filter/aggregate server-side and get a smaller answer use "
+                "liquid_query instead; to size a pull before making it, call liquid_estimate first."
+            ),
+            annotations=ToolAnnotations(
+                title="Fetch records through an adapter",
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=True,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {"adapter_id": adapter_id, "endpoint": endpoint},
+                "required": ["adapter_id"],
+            },
+            outputSchema=_out(
+                {
+                    "records": {"type": "integer", "description": "Number of records returned."},
+                    "data": {"description": "Mapped records (a list, capped at 100; or a single object)."},
+                    "_meta": meta_schema,
+                }
+            ),
+        ),
+        Tool(
+            name="liquid_query",
+            title="Search or aggregate through an adapter",
+            description=(
+                "Run a server-side search or aggregation through an adapter and get just the answer instead "
+                "of the full payload — deterministic, no LLM call, read-only. Two modes: set group_by/agg to "
+                "aggregate (counts, sums, …), or where/fields/limit to filter and project. Side effects: a "
+                "read-only outbound HTTP(S) request to the connected API, rate-limited like liquid_fetch. "
+                "Returns search results {records, data, _meta} or an aggregation {result, _meta}. Prefer this "
+                "over liquid_fetch whenever you only need a filtered slice, a count, or a summary — it returns "
+                "far fewer tokens."
+            ),
+            annotations=ToolAnnotations(
+                title="Search or aggregate through an adapter",
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=True,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "adapter_id": adapter_id,
+                    "endpoint": endpoint,
+                    "where": {
+                        "type": "object",
+                        "description": (
+                            "Search-mode filter as field -> value (or field -> {op: value}), e.g. "
+                            '{"status": "active", "price": {"gt": 100}}. Keys are target_model fields.'
+                        ),
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Search-mode projection: target_model field names to return, "
+                            'e.g. ["name", "price"]. Omit for all fields.'
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Search-mode max records to return (default 100).",
+                    },
+                    "group_by": {
+                        "type": "string",
+                        "description": 'Aggregate-mode: target_model field to group by, e.g. "category".',
+                    },
+                    "agg": {
+                        "type": "object",
+                        "description": (
+                            "Aggregate-mode: aggregations per group as field -> op, e.g. "
+                            '{"price": "sum", "id": "count"}. Provide together with group_by.'
+                        ),
+                    },
+                },
+                "required": ["adapter_id"],
+            },
+            outputSchema=_out(
+                {
+                    "records": {"type": "integer", "description": "Search mode: number of records."},
+                    "data": {"description": "Search mode: matching records (capped at 100)."},
+                    "result": {"description": "Aggregate mode: the grouped/aggregated result."},
+                    "_meta": meta_schema,
+                }
+            ),
+        ),
+        Tool(
+            name="liquid_discover",
+            title="Inspect an API without saving an adapter",
+            description=(
+                "Inspect an API's shape — service name, discovery method, auth type and endpoint list — "
+                "without creating or saving an adapter. Side effects: makes outbound HTTP(S) requests to "
+                "`url` to probe it, and may call the configured LLM for APIs that publish no machine-readable "
+                "spec (REST heuristic). Read-only: nothing is persisted. Use this to preview an unknown API; "
+                "when you're ready to actually read data, call liquid_connect, which discovers *and* maps and "
+                "saves a reusable adapter."
+            ),
+            annotations=ToolAnnotations(
+                title="Inspect an API without saving an adapter",
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=True,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Base URL of the API to inspect (same forms as liquid_connect's url).",
+                    },
+                    "credentials": credentials,
+                },
+                "required": ["url"],
+            },
+            outputSchema=_out(
+                {
+                    "service": {"type": "string"},
+                    "discovery_method": {
+                        "type": "string",
+                        "description": (
+                            "How it was found: openapi, graphql, soap, grpc, websocket, mcp, "
+                            "rest_heuristic, or browser."
+                        ),
+                    },
+                    "auth_type": {"type": "string"},
+                    "endpoints": {"type": "array", "items": {"type": "string"}},
+                }
+            ),
+        ),
+        Tool(
+            name="liquid_estimate",
+            title="Estimate a fetch (no call)",
+            description=(
+                "Pre-flight estimate for a fetch — predicted item count, bytes, tokens, credits and latency, "
+                "each with a confidence and source — without making any HTTP call or LLM call. Read-only and "
+                "free. Returns {estimate: {...}}. Check this before a potentially large liquid_fetch to decide "
+                "whether to narrow the pull with liquid_query (filter/aggregate) first. Requires an adapter_id "
+                "from liquid_connect."
+            ),
+            annotations=ToolAnnotations(
+                title="Estimate a fetch (no call)",
+                readOnlyHint=True,
+                destructiveHint=False,
+                idempotentHint=True,
+                openWorldHint=False,
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {"adapter_id": adapter_id, "endpoint": endpoint},
+                "required": ["adapter_id"],
+            },
+            outputSchema=_out(
+                {
+                    "estimate": {
+                        "type": "object",
+                        "description": "Predicted items, bytes, tokens, credits, latency with confidence + source.",
+                        "additionalProperties": True,
+                    }
+                }
+            ),
+        ),
+    ]
+
+
 def create_server():
     """Build the MCP Server. Requires ``pip install 'liquid-api[mcp]'``."""
     try:
         from mcp.server import Server
-        from mcp.types import TextContent, Tool
     except ImportError as e:  # pragma: no cover
         raise ImportError("MCP SDK not installed. Run: pip install 'liquid-api[mcp]'") from e
 
     liquid, registry = _build_liquid()
     server = Server("liquid")
 
-    def _ok(obj) -> list:
-        return [TextContent(type="text", text=json.dumps(obj, indent=2, default=str))]
+    def _ok(obj: dict) -> dict:
+        # Returning a dict makes it the tool's structuredContent; the SDK also
+        # serializes it to text content for clients that don't read structured
+        # output. ``json.dumps(..., default=str)`` keeps any stray non-JSON value
+        # (e.g. a datetime) from blowing up serialization.
+        return json.loads(json.dumps(obj, default=str))
 
     async def _find(adapter_id: str) -> AdapterConfig | None:
         return next((a for a in await registry.list_all() if a.config_id == adapter_id), None)
@@ -70,80 +375,7 @@ def create_server():
 
     @server.list_tools()
     async def list_tools() -> list:
-        model = {"type": "object", "description": 'field name -> type (e.g. {"name":"str","price":"int"})'}
-        return [
-            Tool(
-                name="liquid_connect",
-                description=(
-                    "Discover an API by URL and map it to your target_model, once. Returns an "
-                    "adapter_id to fetch with. Pass credentials for auth-walled APIs."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string"},
-                        "target_model": model,
-                        "credentials": {"type": "object"},
-                    },
-                    "required": ["url", "target_model"],
-                },
-            ),
-            Tool(
-                name="liquid_list_adapters",
-                description="List adapters already connected on this machine.",
-                inputSchema={"type": "object", "properties": {}},
-            ),
-            Tool(
-                name="liquid_fetch",
-                description="Fetch typed records through an adapter (deterministic, no model call).",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"adapter_id": {"type": "string"}, "endpoint": {"type": "string"}},
-                    "required": ["adapter_id"],
-                },
-            ),
-            Tool(
-                name="liquid_query",
-                description=(
-                    "Server-side search or aggregate through an adapter — get the answer, not the "
-                    "whole payload. Set group_by/agg to aggregate, else where/fields/limit to search."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "adapter_id": {"type": "string"},
-                        "endpoint": {"type": "string"},
-                        "where": {"type": "object"},
-                        "fields": {"type": "array", "items": {"type": "string"}},
-                        "limit": {"type": "integer"},
-                        "group_by": {"type": "string"},
-                        "agg": {"type": "object"},
-                    },
-                    "required": ["adapter_id"],
-                },
-            ),
-            Tool(
-                name="liquid_discover",
-                description="Inspect an API's shape (endpoints, auth) without creating an adapter.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {"url": {"type": "string"}, "credentials": {"type": "object"}},
-                    "required": ["url"],
-                },
-            ),
-            Tool(
-                name="liquid_estimate",
-                description=(
-                    "Pre-flight estimate (items, bytes, tokens, credits, latency) for a fetch — no HTTP "
-                    "call. Check this before a heavy fetch to decide whether to narrow with liquid_query."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {"adapter_id": {"type": "string"}, "endpoint": {"type": "string"}},
-                    "required": ["adapter_id"],
-                },
-            ),
-        ]
+        return _tool_definitions()
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list:
