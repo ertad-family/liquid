@@ -2,6 +2,19 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.38.1] - 2026-05-27
+
+### Improved — MCP tool descriptions (Glama tool scores)
+- Every OSS MCP tool now ships **behavioural annotations** (`readOnlyHint` /
+  `destructiveHint` / `idempotentHint` / `openWorldHint`) and a `title`, a
+  **description for every input parameter** (was 0% schema coverage), and an
+  **outputSchema** so an agent knows the return shape before calling.
+- Descriptions expanded to disclose side effects (network / LLM / persistence),
+  auth and rate-limit behaviour, and explicit cross-tool guidance (when to use
+  this tool vs. a sibling). Tool catalog extracted to `_tool_definitions()` and
+  unit-tested (annotations, full param-doc coverage, output-schema validation of
+  representative success/error results).
+
 ## [0.38.0] - 2026-05-27
 
 ### Added — multi-protocol transport (beyond REST)
