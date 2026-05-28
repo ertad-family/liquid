@@ -2,6 +2,22 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.38.2] - 2026-05-27
+
+### Added / Improved (community issue triage)
+- `Endpoint` is now hashable with `(path, method)` identity — usable in sets and
+  de-duplication (#11).
+- Concise `__repr__` on `Endpoint`, `APISchema`, `FieldMapping`, `AdapterConfig`,
+  `SyncResult` for readable debugging (#4).
+- `SyncResult.duration` computed property (`finished_at - started_at`) (#6).
+- OpenAPI discovery honours the `x-pagination` / `x-paginated` vendor extension,
+  overriding param-name heuristics (#3).
+- Structured log fields (`strategy`, `url`, `endpoints_found`, `method`) across
+  the discovery pipeline (#7).
+- Tests: YAML OpenAPI spec fixture + parse test (#5), py.typed/PEP 561 marker
+  check (#9), and a live Petstore discovery integration test (`-m integration`,
+  self-skips offline) (#8).
+
 ## [0.38.1] - 2026-05-27
 
 ### Improved — MCP tool descriptions (Glama tool scores)

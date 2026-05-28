@@ -44,3 +44,21 @@ class TestSyncResult:
         )
         assert len(result.errors) == 1
         assert result.records_fetched == 0
+
+    def test_duration_property(self):
+        start = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        result = SyncResult(adapter_id="abc123", started_at=start, finished_at=start + timedelta(seconds=2.5))
+        assert result.duration == timedelta(seconds=2.5)
+        assert result.duration.total_seconds() == 2.5
+
+    def test_repr(self):
+        start = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+        result = SyncResult(
+            adapter_id="abcdef1234",
+            started_at=start,
+            finished_at=start + timedelta(seconds=1),
+            records_fetched=10,
+            records_mapped=10,
+            records_delivered=9,
+        )
+        assert repr(result) == "SyncResult(abcdef12, fetched=10, mapped=10, delivered=9, errors=0, duration=1.00s)"
