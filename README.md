@@ -228,6 +228,10 @@ Claude Desktop / any MCP client:
 
 (Or after `pip install liquid-api`, drop `uvx` and use `"command": "liquid-mcp"` directly.)
 
+**One-click in Claude Desktop:** install the [`.mcpb` bundle](packages/liquid-mcp/mcpb) —
+it prompts for your model key on install (stored in the OS keychain), with no JSON
+to edit. Requires `uv` on the machine.
+
 <!-- mcp-name: io.github.ertad-family/liquid -->
 
 Tools: `liquid_connect` (discover + map any interface), `liquid_fetch`,

@@ -1,0 +1,80 @@
+{
+  "manifest_version": "0.3",
+  "name": "liquid",
+  "display_name": "Liquid",
+  "version": "0.1.0",
+  "description": "Connect your AI agent to anything — web APIs, other agents (MCP/A2A), and databases — through one read/write interface.",
+  "long_description": "Liquid auto-discovers any interface (REST/GraphQL/SOAP/gRPC/WebSocket APIs, MCP & A2A agents, and SQL/graph/document/key-value databases) and serves it to your agent through one stable, token-efficient, self-healing toolset — no per-service connector to write or maintain. The bundle runs the open-source Liquid MCP server in your own process via `uvx liquid-mcp`; bring your own model key for discovery.",
+  "author": {
+    "name": "Ertad",
+    "email": "do@ertad.family",
+    "url": "https://github.com/ertad-family/liquid"
+  },
+  "repository": { "type": "git", "url": "https://github.com/ertad-family/liquid" },
+  "homepage": "https://github.com/ertad-family/liquid",
+  "documentation": "https://github.com/ertad-family/liquid/blob/main/docs/QUICKSTART.md",
+  "license": "AGPL-3.0-only",
+  "keywords": ["mcp", "api", "database", "graphql", "postgres", "agents", "discovery", "self-healing"],
+  "server": {
+    "type": "python",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "uvx",
+      "args": ["liquid-mcp"],
+      "env": {
+        "OPENAI_API_KEY": "${user_config.openai_api_key}",
+        "OPENAI_BASE_URL": "${user_config.openai_base_url}",
+        "GEMINI_API_KEY": "${user_config.gemini_api_key}",
+        "ANTHROPIC_API_KEY": "${user_config.anthropic_api_key}",
+        "LIQUID_ALLOW_WRITES": "${user_config.allow_writes}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "tools": [
+    { "name": "liquid_connect", "description": "Discover + map any interface into a reusable adapter" },
+    { "name": "liquid_fetch", "description": "Read records from a connected adapter" },
+    { "name": "liquid_query", "description": "Server-side search / aggregate (token-efficient)" },
+    { "name": "liquid_estimate", "description": "Pre-flight cost/size estimate, no call made" },
+    { "name": "liquid_discover", "description": "Inspect an interface without saving an adapter" },
+    { "name": "liquid_list_adapters", "description": "List connected adapters" }
+  ],
+  "user_config": {
+    "openai_api_key": {
+      "type": "string",
+      "title": "OpenAI API key",
+      "description": "Used once per interface for discovery + field mapping. Leave blank if you use Gemini, Anthropic, or a local OpenAI-compatible server (Base URL) below.",
+      "sensitive": true,
+      "required": false
+    },
+    "openai_base_url": {
+      "type": "string",
+      "title": "OpenAI-compatible Base URL (optional)",
+      "description": "For a local/self-hosted model, e.g. http://localhost:11434/v1 (Ollama) or a vLLM endpoint. Leave blank to use OpenAI.",
+      "required": false
+    },
+    "gemini_api_key": {
+      "type": "string",
+      "title": "Google Gemini API key (optional)",
+      "description": "Use Google Gemini for discovery + field mapping instead of OpenAI. Leave blank if you set another provider above.",
+      "sensitive": true,
+      "required": false
+    },
+    "anthropic_api_key": {
+      "type": "string",
+      "title": "Anthropic API key (optional)",
+      "description": "Use Anthropic (Claude) for discovery + field mapping instead of OpenAI. Leave blank if you set another provider above.",
+      "sensitive": true,
+      "required": false
+    },
+    "allow_writes": {
+      "type": "boolean",
+      "title": "Allow database writes",
+      "description": "Expose the liquid_execute tool so the agent can INSERT / UPDATE / DELETE in connected databases. Off by default — the surface is read-only.",
+      "default": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  }
+}
