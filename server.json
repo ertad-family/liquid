@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.ertad-family/liquid",
   "title": "Liquid",
-  "description": "Connect your agent to any HTTP API on the fly — discover, map, and fetch typed data.",
+  "description": "Connect your AI agent to anything — APIs, databases, and agents; read and write, auto-discovered.",
   "repository": {
     "url": "https://github.com/ertad-family/liquid",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
@@ -20,7 +20,8 @@
         { "name": "OPENAI_API_KEY", "description": "OpenAI (or compatible) API key for discovery", "isRequired": false, "isSecret": true },
         { "name": "OPENAI_BASE_URL", "description": "OpenAI-compatible base URL, e.g. local Ollama/vLLM", "isRequired": false },
         { "name": "GEMINI_API_KEY", "description": "Google Gemini API key (alternative)", "isRequired": false, "isSecret": true },
-        { "name": "ANTHROPIC_API_KEY", "description": "Anthropic API key (alternative)", "isRequired": false, "isSecret": true }
+        { "name": "ANTHROPIC_API_KEY", "description": "Anthropic API key (alternative)", "isRequired": false, "isSecret": true },
+        { "name": "LIQUID_ALLOW_WRITES", "description": "Set to 1 to expose the liquid_execute write tool (database insert/update/delete). Off by default — read-only.", "isRequired": false }
       ]
     }
   ]
