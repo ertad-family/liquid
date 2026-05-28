@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from liquid.transport.mongodb import (
     _build_filter,
     _coerce_doc,
@@ -59,6 +61,7 @@ def test_coerce_doc_stringifies_objectid_and_dates():
 
 
 def test_map_mongo_error_auth_and_connection():
+    pytest.importorskip("pymongo")  # error mapping needs the real exception classes
     from pymongo import errors as me
 
     assert _map_mongo_error(me.OperationFailure("auth", code=18)).status_code == 401

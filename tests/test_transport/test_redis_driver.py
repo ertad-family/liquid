@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from liquid.transport.redis_driver import (
     _coerce_cursor,
     _is_redis_url,
@@ -29,6 +31,7 @@ def test_is_redis_url():
 
 
 def test_map_redis_error():
+    pytest.importorskip("redis")  # error mapping needs the real exception classes
     from redis import exceptions as re
 
     assert _map_redis_error(re.AuthenticationError("x")).status_code == 401
