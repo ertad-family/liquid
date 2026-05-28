@@ -20,8 +20,8 @@ import sqlite3
 from typing import Any
 from urllib.parse import urlsplit
 
-from liquid.transport._sql import SQLITE, build_plain_select, coerce_row
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport._sql import SQLITE, WriteError, build_plain_select, build_write, coerce_row
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,21 @@ class SQLiteDriver:
         next_cursor = str(offset + limit) if len(rows) >= limit else None
         return DriverResponse(status_code=200, records=records, next_cursor=next_cursor)
 
+    async def write(self, ctx: WriteContext) -> DriverResponse:
+        meta = ctx.endpoint.transport_meta or {}
+        path = meta.get("db_path") or _sqlite_path(ctx.base_url or "")
+        if not path:
+            return DriverResponse(status_code=503, error_body="no SQLite database path")
+        try:
+            sql, args = build_write(ctx.op, meta, ctx.values or {}, ctx.where or {}, SQLITE)
+        except WriteError as e:
+            return DriverResponse(status_code=400, error_body=str(e)[:500])
+        try:
+            affected = await asyncio.to_thread(_run_write, path, sql, args)
+        except Exception as e:
+            return _map_sqlite_error(e)
+        return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
+
 
 def _run_query(path: str, sql: str, args: list[Any]) -> list[dict[str, Any]]:
     con = sqlite3.connect(path)
@@ -55,6 +70,16 @@ def _run_query(path: str, sql: str, args: list[Any]) -> list[dict[str, Any]]:
     try:
         cur = con.execute(sql, args)
         return [dict(r) for r in cur.fetchall()]
+    finally:
+        con.close()
+
+
+def _run_write(path: str, sql: str, args: list[Any]) -> int | None:
+    con = sqlite3.connect(path)
+    try:
+        cur = con.execute(sql, args)
+        con.commit()
+        return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else None
     finally:
         con.close()
 

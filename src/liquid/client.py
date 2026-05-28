@@ -810,6 +810,88 @@ class Liquid:
 
             return payload
 
+    async def write(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        op: str,
+        values: dict[str, Any] | None = None,
+        where: dict[str, Any] | None = None,
+        allow_write: bool = False,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Write to a database endpoint: INSERT / UPDATE / DELETE.
+
+        The reverse of :meth:`fetch` for database adapters. ``op`` is
+        ``"insert"`` | ``"update"`` | ``"delete"``; ``values`` are the row fields
+        (insert/update) and ``where`` selects rows (update/delete, required —
+        there are no blanket updates/deletes). Columns are validated against the
+        endpoint's introspected schema and every value is parameterized.
+
+        Writes are **off by default**: pass ``allow_write=True`` to permit the
+        mutation (a deliberate, reversible-decision gate, since this changes data
+        in the target store). Only database drivers support writes; calling this
+        on a read-only wire protocol raises.
+
+        Returns ``{"success", "op", "endpoint", "affected_rows"}``.
+        """
+        if not allow_write:
+            raise LiquidError(
+                "Writes are disabled by default. Pass allow_write=True to permit this mutation.",
+                recovery=Recovery(
+                    hint="This will modify data in the target store — set allow_write=True to proceed.",
+                    retry_safe=False,
+                ),
+            )
+        if op not in ("insert", "update", "delete"):
+            raise ValueError(f"op must be insert/update/delete, got {op!r}")
+
+        from liquid.discovery.utils import managed_http_client
+        from liquid.transport import get_driver, supports_write
+
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+        if target_ep is None:
+            msg = f"Endpoint {ep_path} not found in adapter schema"
+            raise ValueError(msg)
+
+        if not supports_write(get_driver(target_ep.protocol)):
+            raise LiquidError(
+                f"The {target_ep.protocol!r} driver is read-only — writes aren't supported for this endpoint.",
+                recovery=Recovery(hint="Writes are currently supported for SQL database endpoints.", retry_safe=False),
+            )
+
+        await self._ensure_rate_limit_seeded(config, ep_path)
+        async with managed_http_client(self._http_client) as client:
+            fetcher = Fetcher(
+                http_client=client,
+                vault=self.vault,
+                adapter_id=config.config_id,
+                rate_limiter=self.rate_limiter,
+                telemetry=self.telemetry,
+            )
+            wire = await fetcher.write(
+                endpoint=target_ep,
+                base_url=config.schema_.source_url,
+                auth_ref=config.auth_ref,
+                op=op,
+                values=values,
+                where=where,
+                auth_scheme=config.auth_scheme,
+                idempotency_key=idempotency_key,
+            )
+        affected = wire.records[0].get("affected_rows") if wire.records else None
+        await self._record_event(
+            kind="fetch",
+            adapter=config.schema_.service_name,
+            endpoint=ep_path,
+            method=op.upper(),
+            status_code=wire.status_code,
+            record_count=affected,
+        )
+        return {"success": True, "op": op, "endpoint": ep_path, "affected_rows": affected}
+
     async def stream(
         self,
         config: AdapterConfig,
