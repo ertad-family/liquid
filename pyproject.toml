@@ -1,11 +1,11 @@
 [project]
 name = "liquid-api"
-version = "0.39.0"
+version = "0.40.0"
 description = "Zapier for AI agents. Connect to any API on the fly."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
-keywords = ["api", "discovery", "sync", "adapter", "openapi", "graphql", "mcp", "llm", "ai"]
+keywords = ["api", "discovery", "sync", "adapter", "openapi", "graphql", "mcp", "llm", "ai", "postgres", "database"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -57,6 +57,11 @@ grpc = [
 ]
 ws = [
     "websockets>=12.0",
+]
+pg = [
+    # Postgres-as-an-interface: schema introspection + read driver, incl. pgvector
+    # similarity search. asyncpg is async-native and pulls no ORM.
+    "asyncpg>=0.29",
 ]
 dev = [
     "pytest>=8.0",

@@ -2,6 +2,36 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.40.0] - 2026-05-28
+
+### Added — databases as interfaces (Phase 6): Postgres + pgvector
+A database is now a first-class discoverable interface, through the *same*
+`ProtocolDriver` abstraction as every wire/agent protocol. Point Liquid at a
+`postgresql://…` DSN and each table/view becomes a self-maintaining adapter — the
+agent-facing `fetch`/`query`/mapping/recovery API is unchanged.
+
+- **`PostgresDiscovery`.** Introspects `information_schema` / `pg_catalog` over
+  asyncpg: every user table and view becomes a read `Endpoint` (`protocol="postgres"`)
+  whose `transport_meta` carries schema, table, columns + types, primary key, and
+  any **pgvector** columns. Non-Postgres URLs return `None` (the rest of the
+  pipeline is untouched); it runs first so a DSN short-circuits the HTTP probes.
+- **`PostgresDriver`.** Builds a parameterized `SELECT` from the endpoint meta:
+  equality filters on known columns, offset pagination (cursor = next offset),
+  and **pgvector** similarity search (`ORDER BY <col> <-> $n::vector`).
+  Identifiers come only from introspection and are quoted; every value rides a
+  placeholder — no injection surface. Opens/closes one asyncpg connection per
+  fetch (loop-safe). Native pg errors map onto HTTP-like codes (bad password →
+  401, denied → 403, missing table → 404) so the shared recovery logic applies.
+- The persisted adapter DSN is **credential-redacted**; the password (or a full
+  DSN) is resolved from the vault at fetch time.
+- New optional extra: `liquid-api[pg]` (asyncpg). Imports are function-local so
+  the core stays dependency-free.
+- Live-verified end-to-end against a public read-only Postgres (EBI/RNAcentral):
+  discovery → Fetcher → driver → real `SELECT`.
+
+MySQL/SQLite and graph (Neo4j/Cypher) follow as further drivers on this same
+abstraction.
+
 ## [0.39.0] - 2026-05-27
 
 ### Added — agent-protocol drivers (Phase 5)
