@@ -16,6 +16,7 @@ from liquid.discovery.diff import diff_schemas
 from liquid.discovery.duckdb import DuckDBDiscovery
 from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.grpc_reflect import GRPCDiscovery
+from liquid.discovery.manifest import ManifestDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.mongodb import MongoDBDiscovery
 from liquid.discovery.mssql import MSSQLDiscovery
@@ -353,6 +354,8 @@ class Liquid:
                     MSSQLDiscovery(),
                     MongoDBDiscovery(),
                     RedisDiscovery(),
+                    # User-registered SQL backends defined as data (dialect manifests).
+                    ManifestDiscovery(),
                     GRPCDiscovery(),
                     WSDiscovery(),
                     MCPDiscovery(),
