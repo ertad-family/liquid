@@ -16,6 +16,7 @@ core stays dependency-free.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from liquid.transport._sql import (
@@ -26,8 +27,14 @@ from liquid.transport._sql import (
     build_write,
     coerce_row,
     resolve_dsn,
+    run_sql_delta_sense,
 )
 from liquid.transport.base import DriverResponse, FetchContext, WriteContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext, SenseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +103,32 @@ class MSSQLDriver:
         return DriverResponse(
             status_code=200, records=[{"affected_rows": affected if affected and affected >= 0 else None}]
         )
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Delta-poll new rows via the shared SQL sense loop (one aioodbc conn per session)."""
+        import aioodbc
+
+        try:
+            dsn = await resolve_dsn(ctx, _MSSQL_SCHEMES)
+        except DSNError:
+            return
+        try:
+            conn = await aioodbc.connect(dsn=dsn_to_odbc(dsn), autocommit=True)
+        except Exception:
+            return
+
+        async def run_query(sql: str, args: list) -> list[dict]:
+            cur = await conn.cursor()
+            await cur.execute(sql, args)
+            columns = [d[0] for d in cur.description]
+            rows = await cur.fetchall()
+            return [dict(zip(columns, row, strict=False)) for row in rows]
+
+        try:
+            async for event in run_sql_delta_sense(ctx, MSSQL, run_query):
+                yield event
+        finally:
+            await conn.close()
 
 
 def dsn_to_odbc(dsn: str) -> str:

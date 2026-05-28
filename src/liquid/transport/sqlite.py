@@ -20,11 +20,20 @@ import sqlite3
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from liquid.transport._sql import SQLITE, WriteError, build_plain_select, build_write, coerce_row, quote_ident
-from liquid.transport.base import DriverResponse, FetchContext, SenseContext, SenseEvent, WriteContext
+from liquid.transport._sql import (
+    SQLITE,
+    WriteError,
+    build_plain_select,
+    build_write,
+    coerce_row,
+    run_sql_delta_sense,
+)
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext, SenseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -67,38 +76,22 @@ class SQLiteDriver:
         return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
 
     async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
-        """Perceive new rows by polling a monotonic key (delta-poll).
+        """Perceive new rows by delta-polling a monotonic key (shared SQL sense loop).
 
-        Each appended row becomes a ``modality="data"`` event. The cursor is the
-        last-seen value of the watch column (``transport_meta["watch_column"]``,
-        default ``rowid``) so a consumer resumes without re-seeing rows. This is
-        the simplest universal sense for SQLite — no triggers, works on any table.
+        Each appended row becomes a ``modality="data"`` event; the cursor is the
+        watch column (``transport_meta["watch_column"]``, else PK, else ``rowid``)
+        so a consumer resumes without re-seeing rows. No triggers, any table.
         """
         meta = ctx.endpoint.transport_meta or {}
         path = meta.get("db_path") or _sqlite_path(ctx.base_url or "")
         if not path:
             return
-        table = meta["table"]
-        watch_col = meta.get("watch_column", "rowid")
-        last = _to_int(ctx.cursor)
-        emitted = 0
-        loop = asyncio.get_running_loop()
-        deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
 
-        while True:
-            try:
-                rows = await asyncio.to_thread(_poll_new_rows, path, table, watch_col, last)
-            except Exception:
-                return  # table vanished / db gone — perception ends quietly
-            for row in rows:
-                last = row.pop("__cursor__", last)
-                yield SenseEvent(source=ctx.endpoint.path, payload=coerce_row(row), cursor=str(last))
-                emitted += 1
-                if ctx.max_events is not None and emitted >= ctx.max_events:
-                    return
-            if deadline is not None and loop.time() >= deadline:
-                return
-            await asyncio.sleep(ctx.poll_interval)
+        async def run_query(sql: str, args: list) -> list[dict]:
+            return await asyncio.to_thread(_run_query, path, sql, args)
+
+        async for event in run_sql_delta_sense(ctx, SQLITE, run_query):
+            yield event
 
 
 def _run_query(path: str, sql: str, args: list[Any]) -> list[dict[str, Any]]:
@@ -117,31 +110,6 @@ def _run_write(path: str, sql: str, args: list[Any]) -> int | None:
         cur = con.execute(sql, args)
         con.commit()
         return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else None
-    finally:
-        con.close()
-
-
-def _to_int(cursor: str | None) -> int:
-    try:
-        return int(cursor)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 0
-
-
-def _poll_new_rows(path: str, table: str, watch_col: str, after: int) -> list[dict[str, Any]]:
-    """Rows whose watch column is greater than ``after``, ascending. Table/column
-    identifiers come from introspection and are quoted; ``after`` is parameterized.
-
-    The watch value is aliased to ``__cursor__`` so it's always present (``*``
-    omits the implicit ``rowid``) without colliding with a real column's key.
-    """
-    con = sqlite3.connect(path)
-    con.row_factory = sqlite3.Row
-    try:
-        col = quote_ident(watch_col, SQLITE)
-        rel = quote_ident(table, SQLITE)
-        sql = f'SELECT {col} AS "__cursor__", * FROM {rel} WHERE {col} > ? ORDER BY {col} ASC'
-        return [dict(r) for r in con.execute(sql, [after]).fetchall()]
     finally:
         con.close()
 

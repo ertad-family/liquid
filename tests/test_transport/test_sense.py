@@ -25,11 +25,11 @@ class FakeVault:
 
 
 def test_supports_sense_matrix():
-    # Sense-capable drivers vs the rest.
-    assert supports_sense(get_driver("sqlite"))
-    assert supports_sense(get_driver("redis"))
+    # All SQL backends + Redis can perceive; wire/API protocols can't.
+    for proto in ("sqlite", "duckdb", "postgres", "mysql", "mssql", "redis"):
+        assert supports_sense(get_driver(proto)), proto
     assert not supports_sense(get_driver("http"))
-    assert not supports_sense(get_driver("postgres"))  # not implemented (yet)
+    assert not supports_sense(get_driver("graphql"))
 
 
 async def test_sense_on_incapable_driver_raises():
@@ -98,6 +98,34 @@ async def test_sqlite_sense_bounded_by_max_seconds(tmp_path):
         stream = await fetcher.sense(ep, _sqlite_url(db), "none", poll_interval=0.05, max_seconds=0.2)
         seen = [e async for e in stream]
     assert seen == []
+
+
+async def test_duckdb_delta_sense_reads_rows_past_cursor(tmp_path):
+    # Same shared delta-poll loop as SQLite, verified in-process on DuckDB.
+    # (DuckDB is single-writer — no concurrent writer-while-sensing; the cursor
+    # mechanism is what we verify here, the concurrent-append case is the SQLite test.)
+    pytest.importorskip("duckdb")
+    import duckdb
+
+    db = tmp_path / "ev.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute("CREATE TABLE ev (id INTEGER, kind VARCHAR)")
+    con.execute("INSERT INTO ev VALUES (1,'a'),(2,'b'),(3,'c')")
+    con.close()
+    url = "duckdb:////" + str(db).lstrip("/")
+    ep = Endpoint(
+        path="/main/ev",
+        protocol="duckdb",
+        method="GET",
+        transport_meta={"schema": "main", "table": "ev", "columns": ["id", "kind"], "watch_column": "id"},
+    )
+    async with httpx.AsyncClient() as client:
+        fetcher = Fetcher(http_client=client, vault=FakeVault())
+        # Resume past id=1 → perceive only b, c; bounded so it returns promptly.
+        stream = await fetcher.sense(ep, url, "none", cursor="1", poll_interval=0.05, max_events=2, max_seconds=2)
+        seen = [e async for e in stream]
+    assert [e.payload["kind"] for e in seen] == ["b", "c"]
+    assert seen[-1].cursor == "3"
 
 
 _REDIS_URL = "redis://localhost:6379/15"

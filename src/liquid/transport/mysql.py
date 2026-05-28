@@ -12,7 +12,7 @@ imported function-locally so the core stays dependency-free.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlsplit
 
 from liquid.transport._sql import (
@@ -23,8 +23,14 @@ from liquid.transport._sql import (
     build_write,
     coerce_row,
     resolve_dsn,
+    run_sql_delta_sense,
 )
 from liquid.transport.base import DriverResponse, FetchContext, WriteContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext, SenseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +102,30 @@ class MySQLDriver:
         return DriverResponse(
             status_code=200, records=[{"affected_rows": affected if affected and affected >= 0 else None}]
         )
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Delta-poll new rows via the shared SQL sense loop (one aiomysql conn per session)."""
+        import aiomysql
+
+        try:
+            dsn = await resolve_dsn(ctx, _MYSQL_SCHEMES)
+        except DSNError:
+            return
+        try:
+            conn = await aiomysql.connect(**dsn_to_params(dsn))
+        except Exception:
+            return
+
+        async def run_query(sql: str, args: list) -> list[dict]:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(sql, args)
+                return [dict(r) for r in await cur.fetchall()]
+
+        try:
+            async for event in run_sql_delta_sense(ctx, MYSQL, run_query):
+                yield event
+        finally:
+            conn.close()
 
 
 def dsn_to_params(dsn: str) -> dict[str, Any]:

@@ -2,9 +2,22 @@
 
 All notable changes to Liquid will be documented in this file.
 
-## [0.50.0] - 2026-05-28
+## [0.51.0] - 2026-05-28
 
-### Added — `sense`: the agent's perception (afferent organ)
+### Added — `sense` extended to every SQL backend
+The delta-poll perception loop is now shared (`liquid.transport._sql.run_sql_delta_sense`)
+and wired into **all five relational drivers** — Postgres, MySQL, SQLite, DuckDB,
+SQL Server — alongside Redis pub/sub. Six sense-capable interfaces total. SQLite's
+bespoke poller was refactored onto the shared loop. DuckDB delta-sense verified
+in-process; the async SQL backends share the same verified path.
+
+> **Note:** 0.50.0 was published from a release that accidentally omitted the
+> `sense` code (the feature branch never merged into the release line — the tag
+> pointed at a commit without it), so 0.50.0 is effectively a no-op version.
+> **`sense` ships for real in 0.51.0** — the full feature below plus the SQL
+> extension above.
+
+### `sense` — the agent's perception (afferent organ)
 Liquid is an agent's senses **and** hands. `write`/`execute` were the hands
 (act on the world); `sense` is the missing senses — a live stream of events the
 world produces, the continuous counterpart of the one-shot `fetch` pull.
