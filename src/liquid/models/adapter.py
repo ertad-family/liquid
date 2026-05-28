@@ -17,6 +17,10 @@ class FieldMapping(BaseModel):
     transform: str | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
+    def __repr__(self) -> str:
+        arrow = f"{self.source_path} -> {self.target_field}"
+        return f"FieldMapping({arrow}, transform={self.transform!r})" if self.transform else f"FieldMapping({arrow})"
+
 
 class SyncConfig(BaseModel):
     endpoints: list[str]
@@ -40,6 +44,12 @@ class AdapterConfig(BaseModel):
     auth_scheme: AuthScheme | None = Field(default=None, discriminator="kind")
 
     model_config = {"populate_by_name": True}
+
+    def __repr__(self) -> str:
+        return (
+            f"AdapterConfig({self.config_id[:8]}, service={self.schema_.service_name!r}, "
+            f"endpoints={len(self.schema_.endpoints)}, mappings={len(self.mappings)}, v{self.version})"
+        )
 
     def to_tools(self, format: str = "anthropic", style: str = "raw") -> list[dict]:
         """Generate tool definitions for AI agents.

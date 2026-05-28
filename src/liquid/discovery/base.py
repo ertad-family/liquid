@@ -31,18 +31,29 @@ class DiscoveryPipeline:
 
         for strategy in self.strategies:
             strategy_name = type(strategy).__name__
-            logger.info("Trying discovery strategy: %s for %s", strategy_name, url)
+            log_fields = {"strategy": strategy_name, "url": url}
+            logger.info("Trying discovery strategy: %s for %s", strategy_name, url, extra=log_fields)
             try:
                 result = await strategy.discover(url)
                 if result is not None:
-                    logger.info("Discovery succeeded with %s", strategy_name)
+                    logger.info(
+                        "Discovery succeeded with %s",
+                        strategy_name,
+                        extra={
+                            **log_fields,
+                            "endpoints_found": len(result.endpoints),
+                            "method": result.discovery_method,
+                        },
+                    )
                     return result
-                logger.debug("Strategy %s returned None, trying next", strategy_name)
+                logger.debug("Strategy %s returned None, trying next", strategy_name, extra=log_fields)
             except DiscoveryError as e:
-                logger.warning("Strategy %s failed: %s", strategy_name, e)
+                logger.warning("Strategy %s failed: %s", strategy_name, e, extra={**log_fields, "error": str(e)})
                 errors.append((strategy_name, e))
             except Exception as e:
-                logger.warning("Strategy %s unexpected error: %s", strategy_name, e)
+                logger.warning(
+                    "Strategy %s unexpected error: %s", strategy_name, e, extra={**log_fields, "error": str(e)}
+                )
                 errors.append((strategy_name, e))
 
         error_summary = "; ".join(f"{name}: {err}" for name, err in errors)

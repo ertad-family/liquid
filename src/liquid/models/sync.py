@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TC003
+from datetime import datetime, timedelta  # noqa: TC003
 from enum import StrEnum
 from typing import Any
 
@@ -38,3 +38,15 @@ class SyncResult(BaseModel):
     records_delivered: int = 0
     errors: list[SyncError] = Field(default_factory=list)
     next_cursor: str | None = None
+
+    @property
+    def duration(self) -> timedelta:
+        """Wall-clock time the sync took (``finished_at - started_at``)."""
+        return self.finished_at - self.started_at
+
+    def __repr__(self) -> str:
+        return (
+            f"SyncResult({self.adapter_id[:8]}, fetched={self.records_fetched}, "
+            f"mapped={self.records_mapped}, delivered={self.records_delivered}, "
+            f"errors={len(self.errors)}, duration={self.duration.total_seconds():.2f}s)"
+        )

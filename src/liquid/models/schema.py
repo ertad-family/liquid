@@ -78,6 +78,20 @@ class Endpoint(BaseModel):
     generic fields — e.g. a GraphQL operation/selection-set, a SOAP action and
     namespace, a gRPC service/method. Empty for plain REST."""
 
+    def __repr__(self) -> str:
+        return f"Endpoint({self.method} {self.path}, protocol={self.protocol!r}, kind={self.kind.value})"
+
+    def __eq__(self, other: object) -> bool:
+        # A route's identity is (path, method): two descriptions of the same route
+        # are the same endpoint regardless of param/schema detail. Lets endpoints
+        # be used in sets and de-duplicated (see diff_schemas).
+        if not isinstance(other, Endpoint):
+            return NotImplemented
+        return (self.path, self.method) == (other.path, other.method)
+
+    def __hash__(self) -> int:
+        return hash((self.path, self.method))
+
 
 class AuthRequirement(BaseModel):
     type: Literal["oauth2", "api_key", "basic", "bearer", "custom"]
@@ -98,6 +112,12 @@ class APISchema(BaseModel):
     """Provider-reported API version at discovery time. When set, every
     subsequent response is compared against it — mismatch surfaces as an
     :class:`~liquid.evolution.EvolutionKind.VERSION_DRIFT` signal."""
+
+    def __repr__(self) -> str:
+        return (
+            f"APISchema(service={self.service_name!r}, method={self.discovery_method}, "
+            f"endpoints={len(self.endpoints)}, auth={self.auth.type})"
+        )
 
 
 class SchemaDiff(BaseModel):

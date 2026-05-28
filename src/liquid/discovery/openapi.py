@@ -107,7 +107,7 @@ class OpenAPIDiscovery:
                 response_schema = _resolve_refs(self._extract_response_schema(operation, is_v3), spec)
                 request_schema = _resolve_refs(self._extract_request_schema(operation, is_v3), spec)
                 description = operation.get("summary", operation.get("description", ""))
-                pagination = self._infer_pagination(params)
+                pagination = self._infer_pagination(params, operation)
                 kind = self._method_to_kind(method)
                 idempotency_header = self._detect_idempotency(operation)
 
@@ -240,7 +240,14 @@ class OpenAPIDiscovery:
             return RateLimits(requests_per_minute=float(rate_limit) if isinstance(rate_limit, int | float) else None)
         return None
 
-    def _infer_pagination(self, params: list[Parameter]) -> PaginationType | None:
+    def _infer_pagination(
+        self, params: list[Parameter], operation: dict[str, Any] | None = None
+    ) -> PaginationType | None:
+        # A declared vendor extension wins over heuristic param-name inference.
+        if operation:
+            declared = _pagination_from_extension(operation.get("x-pagination") or operation.get("x-paginated"))
+            if declared is not None:
+                return declared
         param_names = {p.name.lower() for p in params}
         if "cursor" in param_names or "after" in param_names or "before" in param_names:
             return PaginationType.CURSOR
@@ -249,6 +256,30 @@ class OpenAPIDiscovery:
         if "page" in param_names or "page_number" in param_names:
             return PaginationType.PAGE_NUMBER
         return None
+
+
+def _pagination_from_extension(ext: Any) -> PaginationType | None:
+    """Map an OpenAPI ``x-pagination`` / ``x-paginated`` vendor extension to a type.
+
+    Accepts a style string (``"cursor"`` / ``"offset"`` / ``"page"`` / ``"link"``) or
+    an object carrying one under ``type`` / ``style`` / ``strategy``. A bare
+    ``x-paginated: true`` (no style) returns ``None`` so param-name inference still
+    runs.
+    """
+    style: Any = ext.get("type") or ext.get("style") or ext.get("strategy") if isinstance(ext, dict) else ext
+    if not isinstance(style, str):
+        return None
+    return {
+        "cursor": PaginationType.CURSOR,
+        "keyset": PaginationType.CURSOR,
+        "offset": PaginationType.OFFSET,
+        "page": PaginationType.PAGE_NUMBER,
+        "page_number": PaginationType.PAGE_NUMBER,
+        "pagenumber": PaginationType.PAGE_NUMBER,
+        "link": PaginationType.LINK_HEADER,
+        "link_header": PaginationType.LINK_HEADER,
+        "none": PaginationType.NONE,
+    }.get(style.strip().lower())
 
 
 def _resolve_refs(schema: dict[str, Any] | None, spec: dict[str, Any], depth: int = 10) -> dict[str, Any] | None:
