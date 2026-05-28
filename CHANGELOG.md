@@ -2,6 +2,35 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.44.0] - 2026-05-28
+
+### Added — NoSQL stores: MongoDB + Redis
+Extends the database layer beyond relational/graph to a document store and a
+key-value store — different paradigms, same `ProtocolDriver` abstraction and the
+same agent-facing `fetch`/`query` API.
+
+- **MongoDB** (`MongoDBDiscovery` + `MongoDBDriver`): each collection becomes a
+  read endpoint; fields are inferred by sampling documents (no fixed schema).
+  The driver runs `find(filter).skip().limit()` — equality filters on scalar
+  fields (dict values skipped, so no `$`-operator injection), offset pagination.
+  Documents are returned JSON-friendly (ObjectId → str, dates → ISO). Connection
+  is a `mongodb://…/db` URI (credential-redacted on persist). New extra
+  `liquid-api[mongodb]` (async pymongo). Unit-tested; the live path needs
+  MongoDB ≥ 4.2.
+- **Redis** (`RedisDiscovery` + `RedisDriver`): keys are grouped into namespace
+  endpoints by their `prefix:` (keys without one fall under `/keys`). The driver
+  `SCAN`s a namespace and reads each key by type (string/hash/list/set/zset),
+  yielding `{key, type, value}`. Pagination is **native cursor-based** — the
+  fetch cursor *is* the Redis SCAN cursor (unlike the offset model elsewhere).
+  `redis://…/db` URLs. New extra `liquid-api[redis]`. Live-verified end-to-end.
+- Both match their URL scheme first so a `mongodb://` / `redis://` URL
+  short-circuits the HTTP probes; the core stays dependency-free (function-local
+  backend imports).
+
+This completes the requested set of stores: SQL (Postgres/pgvector, MySQL,
+SQLite, DuckDB, SQL Server) + graph (Neo4j) + document (MongoDB) + key-value
+(Redis) — eight databases under one interface.
+
 ## [0.43.0] - 2026-05-28
 
 ### Added — more SQL backends: DuckDB + SQL Server

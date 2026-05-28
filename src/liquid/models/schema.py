@@ -120,6 +120,8 @@ class APISchema(BaseModel):
         "neo4j",
         "duckdb",
         "mssql",
+        "mongodb",
+        "redis",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement
