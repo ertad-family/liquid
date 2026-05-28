@@ -14,8 +14,9 @@ sdist/
 venv/
 env/
 
-# uv
-uv.lock
+# uv — lockfile is committed so `uv sync` (e.g. Glama's container build) installs
+# from pinned versions and skips index resolution, hardening against transient
+# PyPI 5xx during the build.
 
 # Testing
 .pytest_cache/
