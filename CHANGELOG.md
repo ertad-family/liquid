@@ -2,6 +2,26 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.45.0] - 2026-05-28
+
+### Added — protocol fingerprinting (meta-discovery)
+A `liquid.discovery.fingerprint` layer that identifies *what* a target is before
+discovery runs — the honest, buildable half of "figure out the interface on the
+fly". (It names and routes; it does not try to synthesize a driver for an unknown
+authenticated binary protocol, which can't be inferred at runtime.)
+
+- `fingerprint_url(url)` — pure, offline: identifies the protocol by URL **scheme**
+  (authoritative) or, for a bare `host:port`, by **well-known port** (5432 →
+  Postgres, 6379 → Redis, …), returning a normalized `scheme://` URL.
+- `classify_banner(data)` + `probe_banner(host, port)` — best-effort active
+  **socket banner** identification (RESP `+PONG`, `HTTP/`, `SSH-`, …).
+- `Liquid.identify(url, probe=…)` — agent-facing "what is this, and can I
+  connect?": returns a `Fingerprint` (protocol, confidence, normalized URL,
+  whether the backend library is installed via `find_spec`, and an install hint
+  like `looks like redis — pip install 'liquid-api[redis]'`).
+- `Liquid.discover()` now normalizes a bare `host:port` via port fingerprinting,
+  so a schemeless DB target routes to the right driver.
+
 ## [0.44.0] - 2026-05-28
 
 ### Added — NoSQL stores: MongoDB + Redis
