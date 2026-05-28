@@ -54,13 +54,17 @@ class OpenAPIDiscovery:
 
     async def _find_spec(self, client: httpx.AsyncClient, base_url: str) -> dict[str, Any] | None:
         base = base_url.rstrip("/")
-        for path in _SPEC_PATHS:
+        # Try the URL exactly as given first (caller may already point at the
+        # spec — e.g. a plugin manifest's ``api.url``), then conventional paths.
+        candidates = ["", *_SPEC_PATHS]
+        for path in candidates:
+            target = f"{base}{path}" if path else base
             try:
-                resp = await client.get(f"{base}{path}", follow_redirects=True, timeout=10.0)
+                resp = await client.get(target, follow_redirects=True, timeout=10.0)
                 if resp.is_success:
                     content_type = resp.headers.get("content-type", "")
                     text = resp.text
-                    is_yaml = "yaml" in content_type or path.endswith(".yaml")
+                    is_yaml = "yaml" in content_type or target.endswith(".yaml")
                     spec = yaml.safe_load(text) if is_yaml else resp.json()
                     if isinstance(spec, dict) and ("openapi" in spec or "swagger" in spec):
                         logger.info("Found OpenAPI spec at %s%s", base, path)

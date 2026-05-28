@@ -9,6 +9,7 @@ import httpx
 
 from liquid.auth.classifier import AuthClassifier, EscalationInfo
 from liquid.auth.manager import AuthManager
+from liquid.discovery.a2a import A2ADiscovery
 from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
 from liquid.discovery.diff import diff_schemas
@@ -16,6 +17,7 @@ from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
+from liquid.discovery.plugin_manifest import PluginManifestDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
 from liquid.discovery.websocket import WSDiscovery
 from liquid.discovery.wsdl import WSDLDiscovery
@@ -318,6 +320,8 @@ class Liquid:
                     GRPCDiscovery(),
                     WSDiscovery(),
                     MCPDiscovery(),
+                    A2ADiscovery(http_client=client),
+                    PluginManifestDiscovery(http_client=client),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
                     WSDLDiscovery(http_client=client),

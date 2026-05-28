@@ -349,8 +349,10 @@ URL                           Agent
 |---|---|---|
 | gRPC | server reflection (`grpc://` / `grpcs://`) | Low |
 | WebSocket | frame sampling (`ws://` / `wss://`) | Low |
-| MCP | `/mcp` | Low (native protocol) |
-| OpenAPI | `/openapi.json`, `/swagger.json`, `/v3/api-docs` | Low |
+| MCP | `/mcp` (or the URL as given) | Low (native protocol) |
+| A2A | `/.well-known/agent-card.json` (AgentCard) | Low |
+| Plugin manifest | `/.well-known/ai-plugin.json` → its OpenAPI | Low |
+| OpenAPI | `/openapi.json`, `/swagger.json`, `/v3/api-docs` (JSON/YAML) | Low |
 | GraphQL | `/graphql` (introspection) | Low |
 | SOAP / WSDL | the WSDL document (`?wsdl`) | Low |
 | REST heuristic | common paths + LLM interpretation | Medium |
@@ -371,8 +373,12 @@ mapping, recovery, cache, rate limits) is identical across all of them:
 | SOAP / WSDL | ✅ stdlib XML | — |
 | gRPC | ✅ unary + server-streaming (reflection) | `liquid-api[grpc]` |
 | WebSocket | ✅ bounded batch reads + subscribe | `liquid-api[ws]` |
+| MCP (agent protocol) | ✅ call tools / read resources of any MCP server | — |
+| A2A (agent protocol) | ✅ JSON-RPC `message/send` against an AgentCard's skills | — |
 
-New protocols plug in via the `liquid.transport.ProtocolDriver` protocol.
+New protocols plug in via the `liquid.transport.ProtocolDriver` protocol. The
+abstraction is the same for wire protocols (REST/GraphQL/SOAP/gRPC/WS) and agent
+protocols (MCP/A2A) — one `fetch`/`query` API regardless of what's underneath.
 
 ## Protocols
 

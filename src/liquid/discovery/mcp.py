@@ -9,6 +9,7 @@ Requires the `mcp` extra: pip install liquid[mcp]
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -53,21 +54,35 @@ class MCPDiscovery:
             logger.debug("MCP SDK not installed, skipping MCPDiscovery")
             return None
 
-        mcp_url = f"{url.rstrip('/')}{self.mcp_path}"
-        try:
-            return await self._connect_and_discover(mcp_url, url)
-        except DiscoveryError:
-            raise
-        except Exception as e:
-            logger.debug("MCP discovery failed for %s: %s", mcp_url, e)
-            return None
+        # Try the URL exactly as given first (user may have pointed at the MCP
+        # endpoint directly, e.g. https://host/mcp), then fall back to common
+        # mount paths. The first one that initializes is the working URL we
+        # store on every endpoint for the driver to call.
+        base = url.rstrip("/")
+        candidates: list[str] = [base]
+        if not base.endswith(self.mcp_path):
+            candidates.append(f"{base}{self.mcp_path}")
+        for candidate in candidates:
+            try:
+                schema = await self._connect_and_discover(candidate, url)
+            except DiscoveryError:
+                raise
+            except Exception as e:
+                logger.debug("MCP discovery failed for %s: %s", candidate, e)
+                continue
+            if schema is not None:
+                return schema
+        return None
 
     async def _connect_and_discover(self, mcp_url: str, source_url: str) -> APISchema | None:
-        async with streamable_http_client(mcp_url) as (read, write), ClientSession(read, write) as session:
+        async with streamable_http_client(mcp_url) as (read, write, *_), ClientSession(read, write) as session:
             await session.initialize()
 
             tools_result = await session.list_tools()
-            resources_result = await session.list_resources()
+            # Tools-only servers may reject list_resources; tolerate that silently.
+            resources_result = None
+            with contextlib.suppress(Exception):
+                resources_result = await session.list_resources()
 
             tools = tools_result.tools if tools_result else []
             resources = resources_result.resources if resources_result else []
@@ -75,8 +90,8 @@ class MCPDiscovery:
             if not tools and not resources:
                 return None
 
-            endpoints = self._tools_to_endpoints(tools)
-            resource_endpoints = self._resources_to_endpoints(resources)
+            endpoints = self._tools_to_endpoints(tools, mcp_url)
+            resource_endpoints = self._resources_to_endpoints(resources, mcp_url)
             endpoints.extend(resource_endpoints)
 
             service_name = self._infer_service_name(source_url)
@@ -89,7 +104,7 @@ class MCPDiscovery:
                 auth=AuthRequirement(type="bearer", tier="A"),
             )
 
-    def _tools_to_endpoints(self, tools: list[Any]) -> list[Endpoint]:
+    def _tools_to_endpoints(self, tools: list[Any], mcp_url: str = "") -> list[Endpoint]:
         endpoints: list[Endpoint] = []
         for tool in tools:
             name = getattr(tool, "name", str(tool))
@@ -104,16 +119,18 @@ class MCPDiscovery:
                 Endpoint(
                     path=f"/mcp/tools/{name}",
                     method="POST",
+                    protocol="mcp",
                     description=description[:500],
                     kind=kind,
                     parameters=params,
                     request_schema=request_schema,
                     response_schema={"type": "object"},
+                    transport_meta={"mcp_url": mcp_url, "tool_name": name, "kind": "tool"},
                 )
             )
         return endpoints
 
-    def _resources_to_endpoints(self, resources: list[Any]) -> list[Endpoint]:
+    def _resources_to_endpoints(self, resources: list[Any], mcp_url: str = "") -> list[Endpoint]:
         endpoints: list[Endpoint] = []
         for resource in resources:
             uri = str(getattr(resource, "uri", resource))
@@ -125,8 +142,10 @@ class MCPDiscovery:
                 Endpoint(
                     path=f"/mcp/resources/{name}",
                     method="GET",
+                    protocol="mcp",
                     description=description[:500] or f"Resource: {uri}",
                     response_schema={"type": "object", "mimeType": mime_type},
+                    transport_meta={"mcp_url": mcp_url, "uri": uri, "kind": "resource"},
                 )
             )
         return endpoints
