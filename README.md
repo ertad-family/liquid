@@ -407,13 +407,16 @@ mapping, recovery, cache, rate limits) is identical across all of them:
 | MongoDB (document) | ✅ collections as endpoints, field filters, pagination | `liquid-api[mongodb]` |
 | Redis (key-value) | ✅ keyspace namespaces as endpoints, typed values, SCAN-cursor paging | `liquid-api[redis]` |
 
-**Databases are read *and* write.** Every SQL backend can also `INSERT` /
-`UPDATE` / `DELETE` through the same abstraction: `liquid.write(adapter,
-endpoint, op="insert", values={...}, allow_write=True)`. Columns are validated
-against the introspected schema, every value is parameterized, and `update` /
-`delete` require a non-empty `where` (no blanket mutations). Writes are **off by
-default** — `allow_write=True` is a deliberate opt-in, since this changes data in
-the target store.
+**Databases are read *and* write.** Every database backend can also mutate data
+through the same abstraction: `liquid.write(adapter, endpoint, op="insert",
+values={...}, allow_write=True)`. SQL backends do `INSERT` / `UPDATE` / `DELETE`
+(columns validated against the introspected schema, every value parameterized);
+MongoDB does insert / update / delete on a collection; Redis does `SET` / `HSET`
+/ `DEL`. `update` / `delete` require a non-empty `where` (no blanket mutations).
+Writes are **off by default** — `allow_write=True` is a deliberate opt-in, since
+this changes data in the target store. Over the MCP server the write tool
+(`liquid_execute`) is only exposed when the operator starts it with
+`LIQUID_ALLOW_WRITES=1`, so the default agent surface stays read-only.
 
 **Add a SQL backend without writing code.** For the SQL family the contract is
 declarative enough to be *data*: a **dialect manifest** specifies quoting,

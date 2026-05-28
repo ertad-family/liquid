@@ -19,7 +19,7 @@ import logging
 from typing import Any
 
 from liquid.transport._sql import coerce_limit, coerce_value, resolve_dsn
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,43 @@ class RedisDriver:
         # SCAN signals "done" by returning cursor 0.
         next_cursor = str(new_cursor) if int(new_cursor) != 0 else None
         return DriverResponse(status_code=200, records=records, next_cursor=next_cursor)
+
+    async def write(self, ctx: WriteContext) -> DriverResponse:
+        import redis.asyncio as redis_async
+
+        try:
+            url = await resolve_dsn(ctx, _REDIS_SCHEMES)
+        except Exception:
+            url = ctx.base_url or ""
+        if not _is_redis_url(url):
+            return DriverResponse(status_code=503, error_body="no Redis URL")
+
+        op = ctx.op
+        values = ctx.values or {}
+        where = ctx.where or {}
+        client = redis_async.from_url(url, decode_responses=True)
+        try:
+            if op in ("insert", "update"):
+                key = values.get("key")
+                if not key:
+                    return DriverResponse(status_code=400, error_body="values.key is required")
+                if "field" in values:  # hash field write
+                    affected = await client.hset(key, values["field"], str(values.get("value", "")))
+                else:  # string write
+                    await client.set(key, str(values.get("value", "")))
+                    affected = 1
+            elif op == "delete":
+                key = where.get("key")
+                if not key:
+                    return DriverResponse(status_code=400, error_body="where.key is required for delete")
+                affected = await client.delete(key)
+            else:
+                return DriverResponse(status_code=400, error_body=f"unsupported op {op!r}")
+        except Exception as e:
+            return _map_redis_error(e)
+        finally:
+            await _aclose(client)
+        return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
 
 
 def _pattern(prefix: str) -> str:

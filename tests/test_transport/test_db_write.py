@@ -44,6 +44,8 @@ def test_supports_write_matrix():
     assert supports_write(get_driver("duckdb"))
     assert supports_write(get_driver("mysql"))
     assert supports_write(get_driver("mssql"))
+    assert supports_write(get_driver("mongodb"))
+    assert supports_write(get_driver("redis"))
     assert not supports_write(get_driver("http"))
     assert not supports_write(get_driver("graphql"))
 
