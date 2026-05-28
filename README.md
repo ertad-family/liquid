@@ -1,8 +1,10 @@
 # Liquid
 
-**The agent-native API fabric.**
+**Connect your AI agent to anything.**
 
-Liquid is the transformation layer between AI agents and any HTTP API — actively optimizing for the constraints real agents hit: token budgets, context windows, cross-API cognitive load, recovery from failures, and predictable cost.
+APIs, databases, and other agents — discovered automatically, read and write,
+through one stable, token-efficient, self-healing interface. AI is used **once**
+at setup; every call after is deterministic.
 
 [![PyPI](https://img.shields.io/pypi/v/liquid-api.svg)](https://pypi.org/project/liquid-api/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/ertad-family/liquid/blob/main/LICENSE)
@@ -10,82 +12,87 @@ Liquid is the transformation layer between AI agents and any HTTP API — active
 
 ---
 
-## Why agents need more than a tool wrapper
+## What an agent can reach through Liquid
 
-Shipping an agent against real APIs surfaces problems most HTTP clients ignore:
+One agent-facing API (`fetch` · `query` · `write`) over everything an agent might
+need to touch — Liquid figures out *how to talk to it* so the agent doesn't have to:
 
-- A single `list_orders` response eats 50k tokens of context
-- Stripe, Shopify, and Square represent "money" in three different shapes
-- A 401 from the API returns a string — the agent has to guess how to recover
-- Rate limits trip without warning; one agent run costs another one's budget
-- The agent has no way to ask "how much will this call cost me?" before making it
+- **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket
+- **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
+- **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
+  Neo4j (graph), MongoDB (documents), Redis (key-value)
 
-Liquid addresses each of these with a concrete primitive. Everything below is shipped and on PyPI.
+Point it at a `https://…` endpoint, a `postgres://…` / `mongodb://…` / `redis://…`
+DSN, a `grpc://…` target, or another MCP server — discovery identifies the
+interface, learns its shape, and hands your agent typed records. The same
+`fetch`/`query`/`write` works regardless of what's underneath. No per-service
+connector to hand-write; the integration maintains itself when the upstream
+changes.
 
-## What Liquid gives your agent
+```python
+# A web API it has never seen — no spec, no connector, no auth
+adapter = await liquid.get_or_create(
+    "https://api.openbrewerydb.org/v1/breweries",
+    target_model={"name": "str", "city": "str", "country": "str"},
+    auto_approve=True,
+)
+breweries = await liquid.fetch(adapter)            # typed records
+
+# A database is just another interface — same API, and it writes too
+db = await liquid.get_or_create("postgresql://reader@host/shop",
+                                target_model={"id": "int", "email": "str"},
+                                auto_approve=True)
+orders = await liquid.fetch(db, "/public/orders")
+await liquid.write(db, "/public/orders", op="insert",
+                   values={"email": "a@b.com", "total_cents": 9900},
+                   allow_write=True)               # opt-in; mutates the store
+```
+
+An LLM is used only at setup — to learn an interface's shape and map its fields
+(databases introspect themselves, so they often need none). Every fetch/write
+after is pure, deterministic transport — no model in the hot path, predictable cost.
+
+## Built for the constraints real agents hit
+
+Reaching everything is half of it. The other half is that agents pay for every
+token, get confused by inconsistent shapes, and can't parse error prose. Liquid
+answers each with a concrete primitive — all shipped, all on PyPI.
 
 ### Context-budget control
 
 ```python
-# Search server-side instead of fetch-then-filter — 10-100x token savings
-orders = await liquid.search(
-    adapter, "/orders",
-    where={"total_cents": {"$gt": 10000}, "status": "paid"},
-    limit=20,
-)
+# Search / aggregate server-side instead of fetch-then-filter — 10-100x fewer tokens
+orders = await liquid.search(adapter, "/orders",
+    where={"total_cents": {"$gt": 10000}, "status": "paid"}, limit=20)
 
-# Aggregate without ever seeing records
-stats = await liquid.aggregate(
-    adapter, "/orders",
-    group_by="status",
-    agg={"total_cents": "sum", "id": "count"},
-)
+stats = await liquid.aggregate(adapter, "/orders",
+    group_by="status", agg={"total_cents": "sum", "id": "count"})
 
-# Full-text search across records (BM25-lite, ranked)
-hits = await liquid.text_search(adapter, "/tickets", "shipping delay")
+hits = await liquid.text_search(adapter, "/tickets", "shipping delay")  # BM25-lite
 
-# Fetch only what fits in your budget
-data = await liquid.fetch(adapter, "/orders", max_tokens=2000)
-# -> _meta.truncated=True, _meta.truncated_at="item_42"
-
-# Identity-plus-two-fields mode for context-constrained runs
-data = await liquid.fetch(adapter, "/customers", verbosity="terse")
-
-# Walk pages until a predicate matches, then stop
-result = await liquid.fetch_until(
-    adapter, "/orders",
-    predicate={"customer_email": {"$eq": "vip@co.com"}},
-    max_pages=20,
-)
+data = await liquid.fetch(adapter, "/orders", max_tokens=2000)      # budget cap
+data = await liquid.fetch(adapter, "/customers", verbosity="terse") # id + 1-2 fields
 ```
 
-### Cross-API normalization
+### Cross-source normalization
 
 ```python
 liquid = Liquid(..., normalize_output=True)
-
-# Stripe: {amount: 1000, currency: "usd"}
-# PayPal: {value: "10.00", currency_code: "USD"}
-# Square: {amount: 1000, currency: "USD"}
-# All three normalize to:
-Money(amount_cents=1000, currency="USD", amount_decimal=Decimal("10.00"))
+# Stripe {amount:1000,currency:"usd"} · PayPal {value:"10.00",currency_code:"USD"}
+#   → Money(amount_cents=1000, currency="USD", amount_decimal=Decimal("10.00"))
 ```
 
-Unix timestamps, ISO 8601, and RFC 2822 dates all collapse to `datetime` in UTC. Pagination envelopes (`{data: [...]}` / `{results: [...]}` / `{items: [...]}` / Link headers) flatten to a single `PaginationEnvelope`. ID fields normalize across `id` / `_id` / `uid` / `uuid` / `*_id` conventions.
+Timestamps (Unix / ISO 8601 / RFC 2822) collapse to UTC `datetime`; pagination
+envelopes (`{data:[…]}` / `{results:[…]}` / Link headers) flatten; ID fields
+normalize across `id` / `_id` / `uuid` / `*_id`.
 
-### Intent layer — canonical operations across APIs
+### Canonical intents — one mental model across services
 
 ```python
-# Same intent, any supported API
-await liquid.execute_intent("charge_customer", {
-    "customer_id": "cus_xyz",
-    "amount_cents": 9999,
-    "currency": "USD",
-})
-# Works on Stripe, Braintree, Square, Adyen — one agent mental model
+await liquid.execute_intent("charge_customer",
+    {"customer_id": "cus_xyz", "amount_cents": 9999, "currency": "USD"})
+# Same intent on Stripe / Braintree / Square / Adyen
 ```
-
-Ten canonical intents ship today: `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `list_orders`, `cancel_order`, `send_email`, `post_message`, `create_ticket`, `close_ticket`.
 
 ### Structured recovery — agents self-heal without parsing text
 
@@ -94,63 +101,35 @@ try:
     await liquid.fetch(adapter, "/orders")
 except LiquidError as e:
     if e.recovery and e.recovery.next_action:
-        # Agent dispatches the action directly — zero text parsing
-        await agent.call_tool(
-            e.recovery.next_action.tool,
-            e.recovery.next_action.args,
-        )
+        await agent.call_tool(e.recovery.next_action.tool, e.recovery.next_action.args)
 ```
 
-Every Fetcher / Executor error carries a `Recovery` with `next_action: ToolCall`, `retry_safe: bool`, and `retry_after_seconds` where applicable. 401 → `store_credentials`. 404/410 → `repair_adapter`. 429 → retry with `retry_after_seconds`.
+Every error carries a `Recovery` with `next_action: ToolCall`, `retry_safe`, and
+`retry_after_seconds`. 401 → `store_credentials`. 404/410 → `repair_adapter`. 429
+→ retry after the given delay. And when the upstream's schema drifts, adapters
+**self-heal** (`repair_adapter`) — the agent keeps working.
 
 ### Predictable cost — know before you call
 
 ```python
 est = await liquid.estimate_fetch(adapter, "/orders")
-# FetchEstimate(
-#   expected_items=250, expected_tokens=52_000, expected_cost_credits=1,
-#   expected_latency_ms=800, confidence="high", source="empirical"
-# )
-
+# FetchEstimate(expected_items=250, expected_tokens=52_000, confidence="high", …)
 if est.expected_tokens < my_budget:
     data = await liquid.fetch(adapter, "/orders")
 ```
 
-Every tool emitted by `to_tools()` also carries a `metadata` block with `cost_credits`, `typical_latency_ms`, `cached`, `cache_ttl_seconds`, `idempotent`, `side_effects`, `expected_result_size`, and `related_tools` so agents can reason about which tool to pick.
-
-### Ambient state — no memorization needed
-
-```python
-tools = await liquid.to_tools(format="anthropic")
-# Auto-includes: liquid_check_quota, liquid_list_adapters, liquid_health_check,
-# liquid_check_rate_limit, liquid_get_adapter_info, liquid_estimate_fetch,
-# liquid_aggregate, liquid_text_search, liquid_search_nl, liquid_fetch_until,
-# liquid_fetch_changes_since
-```
-
-The agent asks "how much budget do I have left?" by calling a tool instead of remembering state in its working memory (where it's unreliable).
-
-### Response `_meta` — provenance and truncation signals
-
-```python
-liquid = Liquid(..., include_meta=True)
-data = await liquid.fetch(adapter, "/orders")
-# {
-#   "data": [...],
-#   "_meta": {
-#     "source": "cache", "age_seconds": 180, "fresh": True,
-#     "truncated": False, "total_count": 523, "next_cursor": "...",
-#     "adapter": "shopify", "endpoint": "/orders",
-#     "fetched_at": "2026-04-20T10:00:00Z", "confidence": 0.93
-#   }
-# }
-```
+Tools emitted by `to_tools()` carry a `metadata` block (`cost_credits`,
+`typical_latency_ms`, `cached`, `idempotent`, `side_effects`, `related_tools`) so
+the agent can reason about which tool to pick — and ambient tools
+(`liquid_check_quota`, `liquid_list_adapters`, …) let it ask about state instead
+of memorizing it.
 
 ---
 
 ## Measured impact
 
-Deterministic benchmarks on realistic agent tasks (500-order, 200-ticket fixtures, mocked HTTP) — reproducible via `python -m benchmarks.run`:
+Deterministic benchmarks on realistic agent tasks (500-order, 200-ticket
+fixtures, mocked HTTP) — reproducible via `python -m benchmarks.run`:
 
 | Task | Metric | Baseline | With Liquid | Delta |
 |---|---|---:|---:|---:|
@@ -185,26 +164,15 @@ pip install liquid-langchain   # LangChain / LangGraph
 pip install liquid-crewai      # CrewAI
 ```
 
+The core is dependency-free — every backend's library is an optional extra,
+imported only when used.
+
 ## See it work — live, no pre-config
 
 Point Liquid at an API it has never seen (no adapter, no OpenAPI spec, no auth)
 and get typed records back. AI is used **once** for discovery + mapping; every
-fetch after is pure HTTP. Runnable end to end —
+fetch after is pure transport — runnable end to end via
 [`examples/live_quickstart.py`](examples/live_quickstart.py):
-
-```python
-liquid = Liquid(llm=my_llm, vault=InMemoryVault(), sink=CollectorSink(),
-                registry=InMemoryAdapterRegistry())
-
-adapter = await liquid.get_or_create(
-    url="https://api.openbrewerydb.org/v1/breweries",
-    target_model={"name": "str", "city": "str", "state": "str", "country": "str"},
-    auto_approve=True,
-)
-data = await liquid.fetch(adapter)
-```
-
-Real output (Gemini as the LLM backend):
 
 ```text
 Connecting to an API Liquid has never seen:
@@ -223,12 +191,12 @@ fetch() -> 50 typed records; first 3:
   LLM calls on 2nd fetch : 0
 ```
 
-Two model calls to learn the API, then zero forever. That's the whole pitch.
+Two model calls to learn the interface, then zero forever. That's the whole pitch.
 
 ## Run as an MCP server (open source, self-hosted)
 
-Expose the engine to any MCP client (Claude Desktop, Cursor, Claude Code). It runs
-the Liquid engine **in your own process** — no cloud, no account, no lock-in:
+Expose the engine to any MCP client (Claude Desktop, Cursor, Claude Code) — it
+runs **in your own process**, no cloud, no account, no lock-in:
 
 ```bash
 pip install 'liquid-api[mcp]'
@@ -257,24 +225,16 @@ Claude Desktop / any MCP client:
 
 <!-- mcp-name: io.github.ertad-family/liquid -->
 
-Tools: `liquid_connect` (discover + map any API), `liquid_fetch`, `liquid_query`
-(server-side search/aggregate), `liquid_estimate` (pre-flight cost/size, no HTTP),
-`liquid_list_adapters`, `liquid_discover`. `fetch`/`query` return a `_meta` block
-(service, endpoint, latency, records).
-Adapters and credentials persist under `~/.liquid`. Backed by **any LLM** — OpenAI,
-Gemini, Anthropic, any OpenAI-compatible/local endpoint via `base_url`, **any of
-100+ providers via LiteLLM** (`LIQUID_LLM_PROVIDER=litellm`,
-`LIQUID_LLM_MODEL=ollama/llama3` / `bedrock/...` / …), or, in code, **your own
-function** through `CallableBackend`.
+Tools: `liquid_connect` (discover + map any interface), `liquid_fetch`,
+`liquid_query` (server-side search/aggregate), `liquid_estimate` (pre-flight
+cost/size, no call), `liquid_list_adapters`, `liquid_discover`. The surface is
+**read-only by default**; start the server with `LIQUID_ALLOW_WRITES=1` to also
+expose `liquid_execute` (database insert/update/delete). Adapters and credentials
+persist under `~/.liquid`. Backed by **any LLM** — OpenAI, Gemini, Anthropic, any
+OpenAI-compatible/local endpoint via `base_url`, **100+ providers via LiteLLM**,
+or your own function through `CallableBackend`.
 
-Real run — connecting to an API it had never seen, fully local:
-
-```text
-liquid_connect → {"status":"connected","service":"Openbrewerydb","mapped_fields":["name","city","country"]}
-liquid_fetch   → 50 typed records, e.g. {"name":"(405) Brewing Co","city":"Norman","country":"United States"}
-```
-
-## Quick start — LangGraph agent with Shopify
+## Quick start — LangGraph agent
 
 ```python
 from liquid import Liquid, InMemoryCache, RateLimiter
@@ -284,13 +244,9 @@ from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 
 liquid = Liquid(
-    llm=my_llm,
-    vault=InMemoryVault(),
-    sink=CollectorSink(),
-    registry=InMemoryAdapterRegistry(),
-    cache=InMemoryCache(),
-    rate_limiter=RateLimiter(),
-    normalize_output=True,    # cross-API canonical shapes
+    llm=my_llm, vault=InMemoryVault(), sink=CollectorSink(),
+    registry=InMemoryAdapterRegistry(), cache=InMemoryCache(), rate_limiter=RateLimiter(),
+    normalize_output=True,    # cross-source canonical shapes
     include_meta=True,        # _meta block on every response
 )
 
@@ -302,153 +258,120 @@ adapter = await liquid.get_or_create(
 )
 
 tools = LiquidToolkit(adapter, liquid).get_tools()
-
 agent = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools)
-result = await agent.ainvoke({
-    "messages": [("user", "Find 5 recent orders over $100 from VIP customers")],
-})
+result = await agent.ainvoke(
+    {"messages": [("user", "Find 5 recent orders over $100 from VIP customers")]}
+)
 ```
 
-The agent's tools come with rich descriptions (WHEN to use, NOT FOR what, return shape, cost), structured recovery on every error, and server-side search so it never pulls 500 orders to find 5.
+The agent's tools come with rich descriptions (WHEN to use, NOT FOR what, return
+shape, cost), structured recovery on every error, and server-side search so it
+never pulls 500 orders to find 5.
 
-## Framework support
+## Every interface, one API
 
-```python
-# Anthropic tool use
-tools = adapter.to_tools(format="anthropic")
+Discovery identifies the target and tags each endpoint with a protocol; a
+pluggable transport driver runs it — but the agent-facing API (`fetch`, `query`,
+`write`, mapping, recovery, cache, rate limits) is identical across all of them.
 
-# OpenAI function calling
-tools = adapter.to_tools(format="openai")
+| Interface | Runtime | Write | Install |
+|---|---|---|---|
+| REST / HTTP+JSON | ✅ | ✅ actions (POST/PUT/PATCH/DELETE) | — |
+| GraphQL | ✅ query + Relay pagination | ✅ mutations | — |
+| SOAP / WSDL | ✅ stdlib XML | — | — |
+| gRPC | ✅ unary + server-streaming (reflection) | — | `liquid-api[grpc]` |
+| WebSocket | ✅ bounded batch reads + subscribe | — | `liquid-api[ws]` |
+| MCP (agent) | ✅ call tools / read resources | ✅ tool calls | — |
+| A2A (agent) | ✅ JSON-RPC `message/send` to AgentCard skills | — | — |
+| Postgres (+pgvector) | ✅ tables/views, filters, pagination, vector search | ✅ | `liquid-api[pg]` |
+| MySQL / MariaDB | ✅ tables/views, filters, pagination | ✅ | `liquid-api[mysql]` |
+| SQLite | ✅ tables/views, filters, pagination | ✅ | — (stdlib) |
+| DuckDB | ✅ tables/views, filters, pagination | ✅ | `liquid-api[duckdb]` |
+| SQL Server | ✅ tables/views, OFFSET/FETCH pagination | ✅ | `liquid-api[mssql]` |
+| Neo4j (graph) | ✅ labels/relationship types, property filters | ✅ node CRUD | `liquid-api[neo4j]` |
+| MongoDB (document) | ✅ collections, field filters, pagination | ✅ | `liquid-api[mongodb]` |
+| Redis (key-value) | ✅ keyspace namespaces, typed values, SCAN paging | ✅ SET/HSET/DEL | `liquid-api[redis]` |
 
-# MCP (Claude Desktop, Cursor)
-tools = adapter.to_tools(format="mcp")
+**Read and write.** `liquid.write(adapter, endpoint, op="insert", values={...},
+allow_write=True)` mutates any database (SQL `INSERT`/`UPDATE`/`DELETE`, Mongo
+insert/update/delete, Redis `SET`/`HSET`/`DEL`, Neo4j node CRUD); web/agent
+writes go through verified actions. Identifiers come from introspection and
+values are parameterized; `update`/`delete` require a `where` (no blanket
+mutations); writes are **off until you opt in** with `allow_write=True`.
 
-# CrewAI
-from liquid_crewai import LiquidCrewToolkit
-tools = LiquidCrewToolkit(adapter, liquid).get_tools()
+**Discovery is automatic — and identifies on the fly.** Before the pipeline runs,
+a fingerprint step names the target: a bare `host:port` is normalized by
+well-known port (`db:5432` → `postgresql://db:5432`), and `liquid.identify(url)`
+answers "what is this, and is its driver installed?" with an install hint when a
+backend is missing. (Identifying a protocol is feasible on the fly; *speaking* a
+new authenticated binary protocol isn't — so unknowns are named, not guessed at.)
 
-# Opt out of metadata block on tools
-tools = adapter.to_tools(format="openai", include_metadata=False)
-```
+| Discovery | Where it looks | Cost |
+|---|---|---|
+| Databases | catalog introspection (`postgres://`, `mysql://`, `mongodb://`, `redis://`, `neo4j://`, …) | Low |
+| gRPC / WebSocket | server reflection / frame sampling | Low |
+| MCP / A2A / Plugin | `/mcp`, `/.well-known/agent-card.json`, `/.well-known/ai-plugin.json` | Low |
+| OpenAPI / GraphQL / SOAP | spec, introspection, or WSDL | Low |
+| REST heuristic | common paths + LLM interpretation | Medium |
+| Browser | Playwright capturing network | High |
+
+**Add a backend without writing code.** For the SQL family the contract is
+declarative enough to be *data*: a **dialect manifest** (quoting, placeholder
+style, pagination, introspection SQL, error map, DBAPI2 module) registered via
+`register_sql_manifest({...})` installs a working driver + discovery — so a new
+SQL / wire-compatible store (CockroachDB, ClickHouse, any DBAPI2 driver), even one
+fetched from the network as JSON, connects without a release. New protocols
+otherwise plug in via the `liquid.transport.ProtocolDriver` protocol; SQL backends
+share a dialect-aware core, so a new one is a ~80-line adapter.
+
+2,500+ APIs are pre-discovered and pre-mapped in the
+[global catalog](https://liquid.ertad.family/catalog) — most popular services
+connect with zero discovery cost.
 
 ## Architecture
 
 ```
-URL                           Agent
- ↓                              ↑
- DISCOVERY                   FETCH / EXECUTE / SEARCH / AGGREGATE
- ↓                              ↑
- gRPC · WS · MCP · OpenAPI    Deterministic per-protocol transport
- GraphQL · SOAP · REST · …      • Query DSL (server-side filter)
-          ↓                     • Output normalization
-       APISchema                • Verbosity / max_tokens / _meta
-          ↓                     • Structured recovery
- AI MAPPING (setup only)        • Rate-limit-aware token bucket
-          ↓                     • Response cache (Cache-Control aware)
-       AdapterConfig            • Empirical probing data (Cloud)
+URL / DSN                       Agent
+   ↓                              ↑
+ FINGERPRINT → DISCOVERY        FETCH · QUERY · WRITE · SEARCH · AGGREGATE
+   ↓                              ↑
+ one ProtocolDriver per          Deterministic per-protocol transport
+ interface:                        • Query DSL (server-side filter)
+   REST GraphQL SOAP gRPC WS       • Output normalization
+   MCP A2A · SQL graph doc KV      • Verbosity / max_tokens / _meta
+   ↓                              • Structured recovery + self-heal
+ APISchema                        • Rate-limit-aware token bucket
+   ↓                              • Response cache (Cache-Control aware)
+ AI MAPPING (setup only)          • Empirical probing data (Cloud)
+   ↓
+ AdapterConfig
 ```
 
-**AI participates at setup only.** Runtime is pure HTTP with transforms — no LLM per call, predictable cost, reproducible behavior. The agent UX layer on top doesn't call an LLM either (except `search_nl`, which caches compilations).
+**AI participates at setup only.** Runtime is pure transport with transforms — no
+LLM per call, predictable cost, reproducible behavior (except `search_nl`, which
+caches its compilations).
 
-## Discovery pipeline
+## Swappable components
 
-| Method | Where it looks | Cost |
-|---|---|---|
-| gRPC | server reflection (`grpc://` / `grpcs://`) | Low |
-| WebSocket | frame sampling (`ws://` / `wss://`) | Low |
-| MCP | `/mcp` (or the URL as given) | Low (native protocol) |
-| A2A | `/.well-known/agent-card.json` (AgentCard) | Low |
-| Plugin manifest | `/.well-known/ai-plugin.json` → its OpenAPI | Low |
-| Postgres | catalog introspection (`postgresql://` / `postgres://`) | Low |
-| MySQL / MariaDB | `information_schema` introspection (`mysql://`) | Low |
-| SQLite | `sqlite_master` introspection (`sqlite://`) | Low |
-| Neo4j (graph) | labels + relationship types (`neo4j://` / `bolt://`) | Low |
-| DuckDB | `information_schema` introspection (`duckdb://`) | Low |
-| SQL Server | `INFORMATION_SCHEMA` introspection (`mssql://`) | Low |
-| MongoDB | collection list + document sampling (`mongodb://`) | Low |
-| Redis | keyspace `SCAN` + namespace grouping (`redis://`) | Low |
-| OpenAPI | `/openapi.json`, `/swagger.json`, `/v3/api-docs` (JSON/YAML) | Low |
-| GraphQL | `/graphql` (introspection) | Low |
-| SOAP / WSDL | the WSDL document (`?wsdl`) | Low |
-| REST heuristic | common paths + LLM interpretation | Medium |
-| Browser | Playwright capturing network | High |
-
-Before the pipeline runs, a **fingerprint** step identifies the target: a bare
-`host:port` (no scheme) is normalized by well-known port (`db:5432` →
-`postgresql://db:5432`), and `liquid.identify(url)` answers "what is this, and is
-its driver installed?" — returning the protocol, confidence (scheme/port/banner),
-and an install hint (`looks like redis — pip install 'liquid-api[redis]'`) when
-the backend is missing. Identification is feasible on the fly; *speaking* a new
-authenticated binary protocol isn't, so unknowns are named, not guessed at.
-
-2,500+ APIs are pre-discovered and pre-mapped in the [global catalog](https://liquid.ertad.family/catalog) — most popular services connect with zero discovery cost.
-
-## Wire protocols
-
-Liquid speaks more than REST. Discovery tags each endpoint with a protocol, and a
-pluggable transport driver runs it — but the agent-facing API (`fetch`, `query`,
-mapping, recovery, cache, rate limits) is identical across all of them:
-
-| Protocol | Runtime | Install |
-|---|---|---|
-| REST / HTTP+JSON | ✅ built in | — |
-| GraphQL | ✅ query/mutation + Relay pagination | — |
-| SOAP / WSDL | ✅ stdlib XML | — |
-| gRPC | ✅ unary + server-streaming (reflection) | `liquid-api[grpc]` |
-| WebSocket | ✅ bounded batch reads + subscribe | `liquid-api[ws]` |
-| MCP (agent protocol) | ✅ call tools / read resources of any MCP server | — |
-| A2A (agent protocol) | ✅ JSON-RPC `message/send` against an AgentCard's skills | — |
-| Postgres (database) | ✅ tables/views as endpoints, filters, pagination, pgvector search | `liquid-api[pg]` |
-| MySQL / MariaDB (database) | ✅ tables/views as endpoints, filters, pagination | `liquid-api[mysql]` |
-| SQLite (database) | ✅ tables/views as endpoints, filters, pagination | — (stdlib) |
-| Neo4j (graph) | ✅ labels/relationship types as endpoints, property filters, pagination | `liquid-api[neo4j]` |
-| DuckDB (database) | ✅ tables/views as endpoints, filters, pagination | `liquid-api[duckdb]` |
-| SQL Server (database) | ✅ tables/views as endpoints, filters, OFFSET/FETCH pagination | `liquid-api[mssql]` |
-| MongoDB (document) | ✅ collections as endpoints, field filters, pagination | `liquid-api[mongodb]` |
-| Redis (key-value) | ✅ keyspace namespaces as endpoints, typed values, SCAN-cursor paging | `liquid-api[redis]` |
-
-**Databases are read *and* write.** Every database backend can also mutate data
-through the same abstraction: `liquid.write(adapter, endpoint, op="insert",
-values={...}, allow_write=True)`. SQL backends do `INSERT` / `UPDATE` / `DELETE`
-(columns validated against the introspected schema, every value parameterized);
-MongoDB does insert / update / delete on a collection; Redis does `SET` / `HSET`
-/ `DEL`. `update` / `delete` require a non-empty `where` (no blanket mutations).
-Writes are **off by default** — `allow_write=True` is a deliberate opt-in, since
-this changes data in the target store. Over the MCP server the write tool
-(`liquid_execute`) is only exposed when the operator starts it with
-`LIQUID_ALLOW_WRITES=1`, so the default agent surface stays read-only.
-
-**Add a SQL backend without writing code.** For the SQL family the contract is
-declarative enough to be *data*: a **dialect manifest** specifies quoting,
-placeholder style, pagination, introspection SQL, an error map, and a DBAPI2
-module — and `register_sql_manifest({...})` installs a working driver +
-discovery for it. So a new SQL / wire-compatible store (CockroachDB, ClickHouse,
-any DBAPI2 driver) — even one fetched from the network as JSON — connects without
-a release. (Binary authenticated protocols still need real, reviewed drivers.)
-
-New protocols plug in via the `liquid.transport.ProtocolDriver` protocol. The
-abstraction is the same for wire protocols (REST/GraphQL/SOAP/gRPC/WS), agent
-protocols (MCP/A2A), relational databases (Postgres/MySQL/SQLite/DuckDB/SQL
-Server), graph databases (Neo4j), document stores (MongoDB), and key-value
-stores (Redis) — one `fetch`/`query` API regardless of what's underneath. SQL
-backends share a dialect-aware core, so a new one is a ~80-line adapter. Point
-Liquid at a `postgresql://…`, `mysql://…`, `sqlite://…`, `duckdb://…`,
-`mssql://…`, `neo4j://…`, `mongodb://…`, or `redis://…` URL and every table,
-view, pgvector column, node label, collection, or key namespace becomes a
-self-maintaining adapter.
-
-## Protocols
-
-Every component is a swappable `Protocol`:
+Every cross-cutting concern is a `Protocol` you can replace:
 
 ```python
 from liquid.protocols import (
-    Vault, LLMBackend, DataSink, KnowledgeStore,
-    AdapterRegistry, CacheStore,
+    Vault, LLMBackend, DataSink, KnowledgeStore, AdapterRegistry, CacheStore,
 )
 ```
 
-In-memory implementations ship for all of them. `liquid-cloud` provides `PostgresVault`, `RedisCache`, etc. for hosted deployments.
+In-memory implementations ship for all of them; `liquid-cloud` provides
+`PostgresVault`, `RedisCache`, etc. for hosted deployments.
+
+## Framework support
+
+```python
+adapter.to_tools(format="anthropic")   # Claude tool use
+adapter.to_tools(format="openai")      # OpenAI function calling
+adapter.to_tools(format="mcp")         # MCP (Claude Desktop, Cursor)
+from liquid_crewai import LiquidCrewToolkit  # CrewAI
+```
 
 ## Ecosystem
 
@@ -460,47 +383,25 @@ In-memory implementations ship for all of them. `liquid-cloud` provides `Postgre
 | [`liquid-cli`](https://pypi.org/project/liquid-cli/) | `liquid init` quickstart |
 | [Liquid Cloud](https://liquid.ertad.family) | Hosted service + global catalog + empirical probing |
 
-## Examples
-
-- [`examples/langchain_agent.py`](examples/langchain_agent.py) — LangGraph ReAct agent
-- [`examples/anthropic_tools.py`](examples/anthropic_tools.py) — Claude tool-use loop
-- [`examples/openai_agents.py`](examples/openai_agents.py) — OpenAI Assistants
-
 ## Comparison
 
 | Feature | Liquid | Zapier | LangChain tool | DIY |
 |---|---|---|---|---|
-| API discovery | yes | no | no | no |
+| Auto-discovers any interface (no curated connector) | yes | no | no | no |
+| APIs + databases + agents in one layer | yes | partial | no | no |
+| Read **and** write through one API | yes | yes | partial | no |
 | Server-side search / aggregate | yes | no | no | partial |
-| Cross-API output normalization | yes | partial | no | no |
+| Cross-source output normalization | yes | partial | no | no |
 | Structured recovery with next_action | yes | no | no | no |
-| Intent layer (canonical operations) | yes | partial | no | no |
-| Pre-flight cost estimate | yes | no | no | no |
 | Self-healing on schema drift | yes | no | no | no |
+| Pre-flight cost estimate | yes | no | no | no |
 | MCP + A2A + LangChain + CrewAI native | yes | no | partial | no |
 | Open source | yes | no | yes | n/a |
 
 ## Documentation
 
 - [Quickstart](docs/QUICKSTART.md) — discover → map → fetch, plus the **no-LLM runtime**
-- [OSS vs. Cloud](docs/OSS-VS-CLOUD.md) — the honest boundary: what's free/self-hosted vs. hosted
+- [OSS vs. Cloud](docs/OSS-VS-CLOUD.md) — the honest boundary: free/self-hosted vs. hosted
 - [Architecture](docs/ARCHITECTURE.md)
 - [Extending](docs/EXTENDING.md) — implement your own Vault / LLM / Sink
 - [Write operations spec](docs/SPEC-WRITE-OPERATIONS.md)
-- [Benchmarks](benchmarks/RESULTS.md) — quantitative evidence for each feature
-
-## License
-
-AGPL-3.0. Commercial license available for closed-source deployments — contact `hello@ertad.com`.
-
-## Contributing
-
-- [Good first issues](https://github.com/ertad-family/liquid/labels/good%20first%20issue)
-- [Contributing guide](CONTRIBUTING.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
-
-## Community
-
-- [Dashboard](https://liquid.ertad.family/dashboard)
-- [Catalog](https://liquid.ertad.family/catalog)
-- [GitHub Discussions](https://github.com/ertad-family/liquid/discussions)
