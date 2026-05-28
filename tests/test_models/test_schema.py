@@ -113,3 +113,30 @@ class TestAPISchema:
         restored = APISchema.model_validate(data)
         assert restored.service_name == schema.service_name
         assert len(restored.endpoints) == 1
+
+
+class TestEndpointIdentity:
+    def test_hash_and_eq_by_path_method(self):
+        a = Endpoint(path="/users", method="GET", description="list")
+        b = Endpoint(path="/users", method="GET", description="different desc, same route")
+        c = Endpoint(path="/users", method="POST")
+        assert a == b  # identity is (path, method), not full fields
+        assert a != c
+        # hashable → usable in sets; the same route de-duplicates
+        assert {a, b, c} == {a, c}
+        assert len({a, b, c}) == 2
+
+    def test_repr_is_concise(self):
+        assert repr(Endpoint(path="/users", method="GET")) == "Endpoint(GET /users, protocol='http', kind=read)"
+
+
+class TestReprs:
+    def test_apischema_repr(self):
+        schema = APISchema(
+            source_url="https://api.x.com",
+            service_name="Shopify",
+            discovery_method="openapi",
+            endpoints=[Endpoint(path="/a", method="GET"), Endpoint(path="/b", method="GET")],
+            auth=AuthRequirement(type="bearer", tier="A"),
+        )
+        assert repr(schema) == "APISchema(service='Shopify', method=openapi, endpoints=2, auth=bearer)"

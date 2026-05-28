@@ -16,6 +16,11 @@ class TestFieldMapping:
         assert fm.transform == "value * -1"
         assert fm.confidence == 0.9
 
+    def test_repr(self):
+        assert repr(FieldMapping(source_path="a.b", target_field="x")) == "FieldMapping(a.b -> x)"
+        with_t = FieldMapping(source_path="a", target_field="x", transform="int(value)")
+        assert repr(with_t) == "FieldMapping(a -> x, transform='int(value)')"
+
     def test_confidence_out_of_range(self):
         with pytest.raises(ValidationError):
             FieldMapping(source_path="x", target_field="y", confidence=1.5)
@@ -70,3 +75,14 @@ class TestAdapterConfig:
         restored = AdapterConfig.model_validate(data)
         assert restored.schema_.service_name == "Example"
         assert restored.verified_by == "admin"
+
+    def test_repr(self):
+        cfg = AdapterConfig(
+            schema=self._make_schema(),
+            auth_ref="vault/example",
+            mappings=[FieldMapping(source_path="a", target_field="b")],
+            sync=SyncConfig(endpoints=["/data"]),
+        )
+        r = repr(cfg)
+        assert r.startswith(f"AdapterConfig({cfg.config_id[:8]}, service='Example', ")
+        assert "endpoints=0, mappings=1, v1)" in r

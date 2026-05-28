@@ -3,7 +3,7 @@ from pathlib import Path
 
 import httpx
 
-from liquid.discovery.openapi import OpenAPIDiscovery
+from liquid.discovery.openapi import OpenAPIDiscovery, _pagination_from_extension
 from liquid.models.schema import PaginationType
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
@@ -58,6 +58,39 @@ class TestOpenAPIDiscovery:
 
         get_pets = next(ep for ep in result.endpoints if ep.path == "/pets" and ep.method == "GET")
         assert get_pets.pagination == PaginationType.CURSOR
+
+    async def test_yaml_spec_discovered(self):
+        # The OpenAPI parser already handles YAML; serve the YAML fixture at the
+        # conventional .yaml path and confirm it parses identically to JSON.
+        yaml_text = (FIXTURES / "petstore_openapi.yaml").read_text()
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            if req.url.path == "/openapi.yaml":
+                return httpx.Response(200, text=yaml_text, headers={"content-type": "application/yaml"})
+            return httpx.Response(404)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await OpenAPIDiscovery(http_client=client).discover("https://petstore.example.com")
+        assert result is not None
+        assert result.service_name == "Petstore"
+        assert len(result.endpoints) == 3
+
+    async def test_x_pagination_extension_overrides_inference(self):
+        spec = _load_fixture("petstore_openapi.json")
+        # GET /pets infers CURSOR from its "cursor" param; the vendor extension wins.
+        spec["paths"]["/pets"]["get"]["x-pagination"] = "page"
+        async with httpx.AsyncClient(transport=_spec_transport(spec)) as client:
+            result = await OpenAPIDiscovery(http_client=client).discover("https://petstore.example.com")
+        get_pets = next(ep for ep in result.endpoints if ep.path == "/pets" and ep.method == "GET")
+        assert get_pets.pagination == PaginationType.PAGE_NUMBER
+
+    def test_pagination_from_extension_mapping(self):
+        assert _pagination_from_extension("cursor") == PaginationType.CURSOR
+        assert _pagination_from_extension({"type": "offset"}) == PaginationType.OFFSET
+        assert _pagination_from_extension({"style": "page_number"}) == PaginationType.PAGE_NUMBER
+        assert _pagination_from_extension("link") == PaginationType.LINK_HEADER
+        assert _pagination_from_extension(True) is None  # bare x-paginated: true → fall back to inference
+        assert _pagination_from_extension("nonsense") is None
 
     async def test_auth_extracted(self):
         spec = _load_fixture("petstore_openapi.json")
