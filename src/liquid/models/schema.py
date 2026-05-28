@@ -115,6 +115,8 @@ class APISchema(BaseModel):
         "a2a",
         "plugin",
         "postgres",
+        "mysql",
+        "sqlite",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement
