@@ -103,7 +103,9 @@ class AuthRequirement(BaseModel):
 class APISchema(BaseModel):
     source_url: str
     service_name: str
-    discovery_method: Literal["mcp", "openapi", "graphql", "rest_heuristic", "browser", "soap", "grpc", "websocket"]
+    discovery_method: Literal[
+        "mcp", "openapi", "graphql", "rest_heuristic", "browser", "soap", "grpc", "websocket", "a2a", "plugin"
+    ]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement
     rate_limits: RateLimits | None = None

@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.39.0] - 2026-05-27
+
+### Added — agent-protocol drivers (Phase 5)
+Extends the multi-protocol transport pipeline to **agent-tool / inter-agent
+protocols**. Same `ProtocolDriver` abstraction; the agent-facing `fetch`/`query`
+API is identical whether the target speaks REST, GraphQL, SOAP, gRPC, WS, MCP or
+A2A.
+
+- **MCP (executable runtime).** `MCPDiscovery` already found tools/resources;
+  now `MCPDriver` actually invokes them via `streamablehttp_client` /
+  `ClientSession.call_tool` / `read_resource`. Endpoints carry `protocol="mcp"`
+  and `transport_meta` (`mcp_url`, `tool_name`/`uri`, kind). Bearer auth flows
+  through `ctx.headers`. Live-verified against `gitmcp.io`.
+- **A2A (Google Agent-to-Agent).** New `A2ADiscovery` reads the AgentCard at
+  `/.well-known/agent-card.json` (or the older `agent.json`), turns each skill
+  into an endpoint. `A2ADriver` calls the agent's URL via JSON-RPC
+  (`message/send`, falling back to `tasks/send` for older agents) and flattens
+  artifact parts into records.
+- **Plugin manifest.** `PluginManifestDiscovery` reads
+  `/.well-known/ai-plugin.json` (ChatGPT plugins / Custom GPT actions), follows
+  `api.url`, and delegates to `OpenAPIDiscovery`. The manifest's curated
+  `name_for_human` overrides the inferred service name.
+- `OpenAPIDiscovery` now tries the URL as-given before standard paths — so a
+  direct spec URL works without `?` tricks. Matches GraphQL/SOAP behaviour.
+
 ## [0.38.2] - 2026-05-27
 
 ### Added / Improved (community issue triage)
