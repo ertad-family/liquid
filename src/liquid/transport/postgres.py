@@ -26,7 +26,10 @@ from liquid.transport._sql import (
     POSTGRES,
     DSNError,
     SelectBuilder,
+    WriteError,
+    affected_from_status,
     build_equality_filters,
+    build_write,
     coerce_limit,
     coerce_offset,
     coerce_row,
@@ -37,7 +40,7 @@ from liquid.transport._sql import (
     resolve_dsn,
     to_float_vector_literal,
 )
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +84,31 @@ class PostgresDriver:
         # Another page likely exists only if this one came back full.
         next_cursor = str(offset + limit) if len(rows) >= limit else None
         return DriverResponse(status_code=200, records=records, next_cursor=next_cursor)
+
+    async def write(self, ctx: WriteContext) -> DriverResponse:
+        import asyncpg
+
+        meta = ctx.endpoint.transport_meta or {}
+        try:
+            dsn = await resolve_dsn(ctx, _PG_SCHEMES)
+        except DSNError as e:
+            return DriverResponse(status_code=401, error_body=str(e)[:500])
+        try:
+            sql, args = build_write(ctx.op, meta, ctx.values or {}, ctx.where or {}, POSTGRES)
+        except WriteError as e:
+            return DriverResponse(status_code=400, error_body=str(e)[:500])
+
+        try:
+            conn = await asyncpg.connect(dsn)
+        except Exception as e:
+            return _map_pg_error(e, on_connect=True)
+        try:
+            status = await conn.execute(sql, *args)  # asyncpg returns a command tag
+        except Exception as e:
+            return _map_pg_error(e)
+        finally:
+            await conn.close()
+        return DriverResponse(status_code=200, records=[{"affected_rows": affected_from_status(status)}])
 
 
 def _build_query(
