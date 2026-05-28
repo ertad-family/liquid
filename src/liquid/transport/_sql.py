@@ -36,22 +36,25 @@ class DSNError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Dialect:
-    """How one SQL backend wants identifiers quoted and parameters marked."""
+    """How one SQL backend wants identifiers quoted, parameters marked, paged."""
 
     name: str
-    quote_char: str = '"'  # Postgres / SQLite; MySQL uses a backtick
+    quote_open: str = '"'  # Postgres / SQLite / DuckDB; MySQL "`", MSSQL "["
+    quote_close: str = '"'  # closing quote (differs from open only for MSSQL "]")
     paramstyle: str = "numeric"  # "numeric" ($1), "qmark" (?), "format" (%s)
+    paginate: str = "limit_offset"  # or "offset_fetch" (MSSQL: OFFSET … FETCH NEXT)
 
 
-POSTGRES = Dialect(name="postgres", quote_char='"', paramstyle="numeric")
-MYSQL = Dialect(name="mysql", quote_char="`", paramstyle="format")
-SQLITE = Dialect(name="sqlite", quote_char='"', paramstyle="qmark")
+POSTGRES = Dialect(name="postgres", quote_open='"', quote_close='"', paramstyle="numeric")
+MYSQL = Dialect(name="mysql", quote_open="`", quote_close="`", paramstyle="format")
+SQLITE = Dialect(name="sqlite", quote_open='"', quote_close='"', paramstyle="qmark")
+DUCKDB = Dialect(name="duckdb", quote_open='"', quote_close='"', paramstyle="qmark")
+MSSQL = Dialect(name="mssql", quote_open="[", quote_close="]", paramstyle="qmark", paginate="offset_fetch")
 
 
 def quote_ident(ident: str, dialect: Dialect) -> str:
-    """Quote an identifier, escaping the quote char (mixed-case / keyword safe)."""
-    q = dialect.quote_char
-    return q + str(ident).replace(q, q + q) + q
+    """Quote an identifier, escaping the closing quote (mixed-case / keyword safe)."""
+    return dialect.quote_open + str(ident).replace(dialect.quote_close, dialect.quote_close * 2) + dialect.quote_close
 
 
 def relation(schema: str | None, table: str, dialect: Dialect) -> str:
@@ -122,9 +125,19 @@ def build_plain_select(
     b = SelectBuilder(dialect)
     rel = relation(schema, table, dialect)
     where_sql = build_equality_filters(b, params, columns, reserved)
-    limit_ph = b.add_param(limit)
-    offset_ph = b.add_param(offset)
-    sql = f"SELECT * FROM {rel}{where_sql} LIMIT {limit_ph} OFFSET {offset_ph}"
+
+    if dialect.paginate == "offset_fetch":
+        # MSSQL: OFFSET/FETCH needs an ORDER BY; `(SELECT NULL)` gives a stable,
+        # column-free ordering. Note offset comes before the row count here.
+        offset_ph = b.add_param(offset)
+        limit_ph = b.add_param(limit)
+        page = f" ORDER BY (SELECT NULL) OFFSET {offset_ph} ROWS FETCH NEXT {limit_ph} ROWS ONLY"
+    else:
+        limit_ph = b.add_param(limit)
+        offset_ph = b.add_param(offset)
+        page = f" LIMIT {limit_ph} OFFSET {offset_ph}"
+
+    sql = f"SELECT * FROM {rel}{where_sql}{page}"
     return sql, b.args, limit, offset
 
 
