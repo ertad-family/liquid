@@ -200,6 +200,7 @@ def test_tool_definitions_are_well_documented():
         "liquid_query",
         "liquid_discover",
         "liquid_estimate",
+        "liquid_sense",
     }
 
     for name, tool in tools.items():
@@ -241,6 +242,10 @@ def test_tool_outputs_validate_against_their_schemas():
         "liquid_query": [{"records": 1, "data": [{"id": 1}], "_meta": {}}, {"result": {"g": 3}, "_meta": {}}],
         "liquid_discover": [{"service": "X", "discovery_method": "graphql", "auth_type": "bearer", "endpoints": []}],
         "liquid_estimate": [{"estimate": {"items": 10}}],
+        "liquid_sense": [
+            {"events": [{"modality": "data", "payload": {"id": 1}, "cursor": "1"}], "count": 1, "next_cursor": "1"},
+            {"events": [], "count": 0},
+        ],
     }
     for name, tool in tools.items():
         for result in [*samples[name], {"error": "RuntimeError: boom"}]:

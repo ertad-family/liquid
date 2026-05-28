@@ -2,6 +2,31 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.50.0] - 2026-05-28
+
+### Added — `sense`: the agent's perception (afferent organ)
+Liquid is an agent's senses **and** hands. `write`/`execute` were the hands
+(act on the world); `sense` is the missing senses — a live stream of events the
+world produces, the continuous counterpart of the one-shot `fetch` pull.
+
+- **Transport abstraction:** `SenseEvent` (modality-agnostic by design —
+  `modality` tags the signal, `"data"` today, open for `"audio"`/`"telemetry"`/…
+  as agents gain new senses; `payload` is open; `cursor` resumes), `SenseContext`,
+  a `SenseDriver` protocol, and `supports_sense(driver)`. `Fetcher.sense(...)` and
+  `Liquid.sense(...)` yield events; bounded by `max_events` / `max_seconds` so a
+  stream never blocks forever.
+- **Reference sense drivers:** **SQLite** delta-poll (new rows past a watch-column
+  cursor — works on any table, no triggers; verified in-process) and **Redis**
+  pub/sub (native push; live-verified). Same `ProtocolDriver` abstraction as
+  everything else.
+- **`liquid_sense` MCP tool** — "check the agent's senses": a bounded drain-by-pull
+  (events since `cursor` → batch + `next_cursor`) so an MCP agent (Claude Code,
+  Cursor, …) can stay aware of changes within its pull-based loop. Read-only,
+  ships in the default surface (no write gate).
+
+This completes the sensorimotor loop: `fetch` (probe), **`sense` (perceive)**,
+`write` (act).
+
 ## [0.49.2] - 2026-05-28
 
 ### Docs
