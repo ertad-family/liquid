@@ -2,6 +2,29 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.47.0] - 2026-05-28
+
+### Added — database writes (INSERT / UPDATE / DELETE)
+Closes the write story for databases: the SQL drivers are now read **and** write,
+through the same driver abstraction as reads. (HTTP/API writes already existed via
+`execute()`/actions; this extends the reverse flow to the database backends.)
+
+- New write path on the transport abstraction: `WriteContext` + a `WriteDriver`
+  protocol (`supports_write(driver)`); `Fetcher.write(...)` mirrors `fetch` for
+  the reverse direction and maps errors onto the shared recovery exceptions.
+- Shared DML builders in `liquid.transport._sql` — `build_insert` / `build_update`
+  / `build_delete` (dialect-aware placeholders + quoting): columns validated
+  against the introspected schema (identifiers never come from input), every value
+  parameterized, and a **non-empty WHERE is required** for update/delete (no
+  blanket mutations).
+- `write()` implemented on all five SQL drivers (Postgres, MySQL, SQLite, DuckDB,
+  SQL Server). Verified in-process end-to-end on SQLite + DuckDB (insert → read →
+  update → delete round-trip); Postgres/MySQL/MSSQL share the same path.
+- `Liquid.write(config, endpoint, op=…, values=…, where=…, allow_write=False)` —
+  writes are **off by default**; `allow_write=True` is a deliberate opt-in gate
+  since the operation mutates the target store. Returns
+  `{success, op, endpoint, affected_rows}`.
+
 ## [0.46.0] - 2026-05-28
 
 ### Added — declarative dialect manifests (add a SQL backend as data)

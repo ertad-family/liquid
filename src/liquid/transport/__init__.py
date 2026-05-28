@@ -12,8 +12,11 @@ from liquid.transport.base import (
     DriverResponse,
     FetchContext,
     ProtocolDriver,
+    WriteContext,
+    WriteDriver,
     get_driver,
     register_driver,
+    supports_write,
 )
 from liquid.transport.duckdb_driver import DuckDBDriver
 from liquid.transport.graphql import GraphQLDriver
@@ -65,6 +68,9 @@ __all__ = [
     "SOAPDriver",
     "SQLiteDriver",
     "WSDriver",
+    "WriteContext",
+    "WriteDriver",
     "get_driver",
     "register_driver",
+    "supports_write",
 ]

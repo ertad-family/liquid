@@ -13,6 +13,7 @@ from liquid.exceptions import (
     RateLimitError,
     Recovery,
     ServiceDownError,
+    SyncRuntimeError,
     ToolCall,
     VaultError,
 )
@@ -205,6 +206,73 @@ class Fetcher:
                 )
 
         return result
+
+    async def write(
+        self,
+        endpoint: Endpoint,
+        base_url: str,
+        auth_ref: str,
+        *,
+        op: str,
+        values: dict[str, Any] | None = None,
+        where: dict[str, Any] | None = None,
+        auth_scheme: AuthScheme | None = None,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        """Perform one write (INSERT / UPDATE / DELETE) via the endpoint's driver.
+
+        Mirrors :meth:`fetch` for the reverse direction: builds a
+        :class:`~liquid.transport.WriteContext`, dispatches to the driver's
+        ``write``, and maps an error status onto the shared recovery exceptions.
+        The driver must support writes (DB drivers do; wire protocols don't).
+        """
+        from liquid.transport import WriteContext, get_driver, supports_write
+
+        driver = get_driver(endpoint.protocol)
+        if not supports_write(driver):
+            raise SyncRuntimeError(
+                f"The {endpoint.protocol!r} driver is read-only — writes are not supported here.",
+                recovery=Recovery(hint="Writes are supported for SQL database endpoints.", retry_safe=False),
+            )
+
+        auth: httpx.Auth | None = None
+        if auth_scheme is not None:
+            auth = await auth_scheme.build_httpx_auth(self.vault, auth_ref)
+
+        rate_key = f"{self.adapter_id or 'anon'}:{endpoint.path}"
+        if self.rate_limiter is not None and self.respect_rate_limit:
+            await self.rate_limiter.acquire(rate_key)
+
+        ctx = WriteContext(
+            endpoint=endpoint,
+            base_url=base_url,
+            op=op,
+            values=values or {},
+            where=where or {},
+            vault=self.vault,
+            auth_ref=auth_ref,
+            auth=auth,
+            http_client=self.http_client,
+            idempotency_key=idempotency_key,
+        )
+
+        start_time = time.perf_counter()
+        wire = await driver.write(ctx)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+        if self.telemetry is not None:
+            await self.telemetry.record(
+                url=f"{base_url.rstrip('/')}{endpoint.path}",
+                status_code=wire.status_code,
+                headers=wire.headers,
+                response_time_ms=elapsed_ms,
+            )
+
+        if isinstance(wire.raw, httpx.Response):
+            _check_response(wire.raw)
+        else:
+            _check_status(wire.status_code, wire.error_body or "", wire.headers)
+        return wire
 
 
 def _resolve_ttl(override_ttl: int | None, headers: dict[str, str]) -> int:

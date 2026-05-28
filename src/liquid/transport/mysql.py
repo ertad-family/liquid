@@ -18,11 +18,13 @@ from urllib.parse import unquote, urlsplit
 from liquid.transport._sql import (
     MYSQL,
     DSNError,
+    WriteError,
     build_plain_select,
+    build_write,
     coerce_row,
     resolve_dsn,
 )
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,36 @@ class MySQLDriver:
         records = [coerce_row(dict(r)) for r in rows]
         next_cursor = str(offset + limit) if len(rows) >= limit else None
         return DriverResponse(status_code=200, records=records, next_cursor=next_cursor)
+
+    async def write(self, ctx: WriteContext) -> DriverResponse:
+        import aiomysql
+
+        try:
+            dsn = await resolve_dsn(ctx, _MYSQL_SCHEMES)
+        except DSNError as e:
+            return DriverResponse(status_code=401, error_body=str(e)[:500])
+        meta = ctx.endpoint.transport_meta or {}
+        try:
+            sql, args = build_write(ctx.op, meta, ctx.values or {}, ctx.where or {}, MYSQL)
+        except WriteError as e:
+            return DriverResponse(status_code=400, error_body=str(e)[:500])
+
+        try:
+            conn = await aiomysql.connect(**dsn_to_params(dsn))
+        except Exception as e:
+            return _map_mysql_error(e, on_connect=True)
+        try:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, args)
+                affected = cur.rowcount
+            await conn.commit()  # aiomysql doesn't autocommit
+        except Exception as e:
+            return _map_mysql_error(e)
+        finally:
+            conn.close()
+        return DriverResponse(
+            status_code=200, records=[{"affected_rows": affected if affected and affected >= 0 else None}]
+        )
 
 
 def dsn_to_params(dsn: str) -> dict[str, Any]:

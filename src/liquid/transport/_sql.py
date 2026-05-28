@@ -141,6 +141,81 @@ def build_plain_select(
     return sql, b.args, limit, offset
 
 
+class WriteError(Exception):
+    """A write was rejected before hitting the database (unsafe or invalid)."""
+
+
+def _validate_columns(values: dict[str, Any], columns: set[str], what: str) -> list[str]:
+    """Keep only keys that name a real column (identifiers never come from input)."""
+    cols = [k for k in values if not columns or k in columns]
+    if not cols:
+        raise WriteError(f"no known columns to {what}; got {sorted(values)} against {sorted(columns)}")
+    return cols
+
+
+def build_insert(meta: dict[str, Any], values: dict[str, Any], dialect: Dialect) -> tuple[str, list[Any]]:
+    """``INSERT INTO rel (cols) VALUES (?, …)`` — values parameterized, cols validated."""
+    columns = set(meta.get("columns") or [])
+    cols = _validate_columns(values, columns, "insert")
+    b = SelectBuilder(dialect)
+    placeholders = [b.add_param(values[c]) for c in cols]
+    col_sql = ", ".join(quote_ident(c, dialect) for c in cols)
+    rel = relation(meta.get("schema"), meta["table"], dialect)
+    return f"INSERT INTO {rel} ({col_sql}) VALUES ({', '.join(placeholders)})", b.args
+
+
+def build_update(
+    meta: dict[str, Any],
+    values: dict[str, Any],
+    where: dict[str, Any],
+    dialect: Dialect,
+) -> tuple[str, list[Any]]:
+    """``UPDATE rel SET … WHERE …`` — a non-empty WHERE is required (no blanket updates)."""
+    columns = set(meta.get("columns") or [])
+    set_cols = _validate_columns(values, columns, "update")
+    where_cols = _validate_columns(where, columns, "filter on")
+    b = SelectBuilder(dialect)
+    set_sql = ", ".join(f"{quote_ident(c, dialect)} = {b.add_param(values[c])}" for c in set_cols)
+    where_sql = " AND ".join(f"{quote_ident(c, dialect)} = {b.add_param(where[c])}" for c in where_cols)
+    rel = relation(meta.get("schema"), meta["table"], dialect)
+    return f"UPDATE {rel} SET {set_sql} WHERE {where_sql}", b.args
+
+
+def build_delete(meta: dict[str, Any], where: dict[str, Any], dialect: Dialect) -> tuple[str, list[Any]]:
+    """``DELETE FROM rel WHERE …`` — a non-empty WHERE is required (no blanket deletes)."""
+    columns = set(meta.get("columns") or [])
+    where_cols = _validate_columns(where, columns, "filter on")
+    b = SelectBuilder(dialect)
+    where_sql = " AND ".join(f"{quote_ident(c, dialect)} = {b.add_param(where[c])}" for c in where_cols)
+    rel = relation(meta.get("schema"), meta["table"], dialect)
+    return f"DELETE FROM {rel} WHERE {where_sql}", b.args
+
+
+def build_write(
+    op: str,
+    meta: dict[str, Any],
+    values: dict[str, Any],
+    where: dict[str, Any],
+    dialect: Dialect,
+) -> tuple[str, list[Any]]:
+    """Dispatch to the INSERT / UPDATE / DELETE builder for ``op``."""
+    if op == "insert":
+        return build_insert(meta, values, dialect)
+    if op == "update":
+        return build_update(meta, values, where, dialect)
+    if op == "delete":
+        return build_delete(meta, where, dialect)
+    raise WriteError(f"unsupported write op {op!r} (expected insert/update/delete)")
+
+
+def affected_from_status(status: str) -> int | None:
+    """Parse the trailing row count from a Postgres command tag (e.g. ``UPDATE 3``)."""
+    parts = str(status).split()
+    if parts and parts[-1].isdigit():
+        return int(parts[-1])
+    return None
+
+
 def coerce_limit(raw: Any) -> int:
     try:
         n = int(raw)

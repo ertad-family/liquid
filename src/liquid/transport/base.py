@@ -77,6 +77,29 @@ class FetchContext:
     http_client: httpx.AsyncClient | None = None
 
 
+@dataclass(slots=True)
+class WriteContext:
+    """Everything a driver needs to perform one write (INSERT / UPDATE / DELETE).
+
+    ``op`` is ``"insert"`` | ``"update"`` | ``"delete"``. ``values`` are the row
+    fields to write (insert/update); ``where`` selects rows (update/delete). The
+    driver resolves its own connection (DSN from the vault, like on read) and
+    validates columns against the endpoint's ``transport_meta`` before building a
+    parameterized statement. Writes are gated and opt-in at the client layer.
+    """
+
+    endpoint: Endpoint
+    base_url: str
+    op: str
+    values: dict[str, Any]
+    where: dict[str, Any]
+    vault: Vault
+    auth_ref: str
+    auth: httpx.Auth | None = None
+    http_client: httpx.AsyncClient | None = None
+    idempotency_key: str | None = None
+
+
 @runtime_checkable
 class ProtocolDriver(Protocol):
     """Performs a single wire call for one protocol."""
@@ -84,6 +107,24 @@ class ProtocolDriver(Protocol):
     scheme: str
 
     async def fetch(self, ctx: FetchContext) -> DriverResponse: ...
+
+
+@runtime_checkable
+class WriteDriver(Protocol):
+    """A driver that can also write. Optional — most wire protocols are read-only here.
+
+    Drivers implement this in addition to :class:`ProtocolDriver`; the client
+    checks ``isinstance(driver, WriteDriver)`` and refuses the write otherwise.
+    """
+
+    scheme: str
+
+    async def write(self, ctx: WriteContext) -> DriverResponse: ...
+
+
+def supports_write(driver: object) -> bool:
+    """Whether ``driver`` can perform writes (implements :class:`WriteDriver`)."""
+    return isinstance(driver, WriteDriver)
 
 
 _REGISTRY: dict[str, ProtocolDriver] = {}
