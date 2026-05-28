@@ -2,6 +2,17 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.49.0] - 2026-05-28
+
+### Added — Neo4j (graph) writes
+Completes read+write across **all eight** databases. `Neo4jDriver` now implements
+`WriteDriver`: node CRUD via Cypher — `insert` → `CREATE (n:Label {…})`, `update`
+→ `MATCH (n:Label) WHERE … SET …`, `delete` → `MATCH (n:Label) WHERE … DETACH
+DELETE`. Labels and property keys are backtick-quoted; every value rides a named
+parameter; `update`/`delete` require a non-empty `where` (no blanket mutations).
+Relationship writes (which need start/end nodes) are out of scope for now and are
+rejected with a clear error. `supports_write()` is now true for every DB driver.
+
 ## [0.48.0] - 2026-05-28
 
 ### Added — writes reach the agent + NoSQL writes
