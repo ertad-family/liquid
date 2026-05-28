@@ -118,6 +118,8 @@ class APISchema(BaseModel):
         "mysql",
         "sqlite",
         "neo4j",
+        "duckdb",
+        "mssql",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement

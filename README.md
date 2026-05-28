@@ -176,6 +176,8 @@ pip install 'liquid-api[ws]'         # WebSocket transport
 pip install 'liquid-api[pg]'         # Postgres / pgvector (asyncpg)
 pip install 'liquid-api[mysql]'      # MySQL / MariaDB (aiomysql); SQLite needs no extra
 pip install 'liquid-api[neo4j]'      # Neo4j graph (Bolt / Cypher)
+pip install 'liquid-api[duckdb]'     # DuckDB (embedded analytics)
+pip install 'liquid-api[mssql]'      # SQL Server (ODBC; needs a system ODBC driver)
 # Framework integrations
 pip install liquid-langchain   # LangChain / LangGraph
 pip install liquid-crewai      # CrewAI
@@ -359,6 +361,8 @@ URL                           Agent
 | MySQL / MariaDB | `information_schema` introspection (`mysql://`) | Low |
 | SQLite | `sqlite_master` introspection (`sqlite://`) | Low |
 | Neo4j (graph) | labels + relationship types (`neo4j://` / `bolt://`) | Low |
+| DuckDB | `information_schema` introspection (`duckdb://`) | Low |
+| SQL Server | `INFORMATION_SCHEMA` introspection (`mssql://`) | Low |
 | OpenAPI | `/openapi.json`, `/swagger.json`, `/v3/api-docs` (JSON/YAML) | Low |
 | GraphQL | `/graphql` (introspection) | Low |
 | SOAP / WSDL | the WSDL document (`?wsdl`) | Low |
@@ -386,14 +390,17 @@ mapping, recovery, cache, rate limits) is identical across all of them:
 | MySQL / MariaDB (database) | ✅ tables/views as endpoints, filters, pagination | `liquid-api[mysql]` |
 | SQLite (database) | ✅ tables/views as endpoints, filters, pagination | — (stdlib) |
 | Neo4j (graph) | ✅ labels/relationship types as endpoints, property filters, pagination | `liquid-api[neo4j]` |
+| DuckDB (database) | ✅ tables/views as endpoints, filters, pagination | `liquid-api[duckdb]` |
+| SQL Server (database) | ✅ tables/views as endpoints, filters, OFFSET/FETCH pagination | `liquid-api[mssql]` |
 
 New protocols plug in via the `liquid.transport.ProtocolDriver` protocol. The
 abstraction is the same for wire protocols (REST/GraphQL/SOAP/gRPC/WS), agent
-protocols (MCP/A2A), relational databases (Postgres/MySQL/SQLite), and graph
-databases (Neo4j) — one `fetch`/`query` API regardless of what's underneath.
-Point Liquid at a `postgresql://…`, `mysql://…`, `sqlite://…`, or `neo4j://…`
-DSN and every table, view, pgvector column, or node label becomes a
-self-maintaining adapter.
+protocols (MCP/A2A), relational databases (Postgres/MySQL/SQLite/DuckDB/SQL
+Server), and graph databases (Neo4j) — one `fetch`/`query` API regardless of
+what's underneath. SQL backends share a dialect-aware core, so a new one is a
+~80-line adapter. Point Liquid at a `postgresql://…`, `mysql://…`, `sqlite://…`,
+`duckdb://…`, `mssql://…`, or `neo4j://…` DSN and every table, view, pgvector
+column, or node label becomes a self-maintaining adapter.
 
 ## Protocols
 
