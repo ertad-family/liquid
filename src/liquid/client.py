@@ -319,7 +319,23 @@ class Liquid:
         headers so discovery can probe APIs that reject unauthenticated requests
         (and that publish no OpenAPI spec). The same credentials are later stored
         by :meth:`get_or_create` for fetch-time auth.
+
+        A bare ``host:port`` (no scheme) is normalized to a protocol URL via
+        port fingerprinting (e.g. ``db:5432`` → ``postgresql://db:5432``); if
+        nothing recognizes the target, the failure is enriched with a "looks
+        like X — install ..." hint when fingerprinting can name it.
         """
+        from liquid.discovery.fingerprint import fingerprint_url
+
+        fp = fingerprint_url(url)
+        if fp.confidence == "port" and fp.normalized_url:
+            import logging
+
+            logging.getLogger(__name__).info(
+                "fingerprint: normalized %s → %s (%s)", url, fp.normalized_url, fp.evidence
+            )
+            url = fp.normalized_url
+
         probe_auth = await self._build_probe_auth(credentials)
         client = self._http_client or httpx.AsyncClient()
         try:
@@ -353,6 +369,19 @@ class Liquid:
         finally:
             if not self._http_client:
                 await client.aclose()
+
+    async def identify(self, url: str, *, probe: bool = True) -> Any:
+        """Identify the protocol of a target without discovering it.
+
+        Returns a :class:`~liquid.discovery.fingerprint.Fingerprint` (protocol,
+        confidence, normalized URL, whether a driver is installed, and an
+        install hint). Useful for an agent to ask "what is this, and can I
+        connect?" before committing to discovery. ``probe=False`` stays offline
+        (scheme/port only; no socket connection).
+        """
+        from liquid.discovery.fingerprint import identify as _identify
+
+        return await _identify(url, probe=probe)
 
     async def _build_probe_auth(self, credentials: dict[str, Any] | None) -> Any:
         """Authenticate discovery probes with the *same* scheme used for fetch.

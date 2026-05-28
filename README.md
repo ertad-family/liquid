@@ -373,6 +373,14 @@ URL                           Agent
 | REST heuristic | common paths + LLM interpretation | Medium |
 | Browser | Playwright capturing network | High |
 
+Before the pipeline runs, a **fingerprint** step identifies the target: a bare
+`host:port` (no scheme) is normalized by well-known port (`db:5432` →
+`postgresql://db:5432`), and `liquid.identify(url)` answers "what is this, and is
+its driver installed?" — returning the protocol, confidence (scheme/port/banner),
+and an install hint (`looks like redis — pip install 'liquid-api[redis]'`) when
+the backend is missing. Identification is feasible on the fly; *speaking* a new
+authenticated binary protocol isn't, so unknowns are named, not guessed at.
+
 2,500+ APIs are pre-discovered and pre-mapped in the [global catalog](https://liquid.ertad.family/catalog) — most popular services connect with zero discovery cost.
 
 ## Wire protocols
