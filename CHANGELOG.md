@@ -2,6 +2,32 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.41.0] - 2026-05-28
+
+### Added — generic SQL: MySQL / MariaDB + SQLite
+Extends the database layer (0.40.0) to two more SQL backends through a shared,
+dialect-aware SQL core, so adding a backend is now a thin adapter.
+
+- **Shared SQL toolkit** (`liquid.transport._sql`): a `Dialect` (identifier
+  quoting + placeholder style — `$n` / `?` / `%s`), a `SelectBuilder`, equality
+  filters, pagination, value coercion, and DSN handling. Postgres was refactored
+  onto it (identical SQL output; pgvector stays Postgres-only). Discovery shares
+  `liquid.discovery._sql.make_sql_endpoint`.
+- **SQLite** (`SQLiteDiscovery` + `SQLiteDriver`): introspects `sqlite_master` /
+  `PRAGMA table_info`, reads via the **stdlib** `sqlite3` run off-thread — **no
+  extra dependency**. Accepts `sqlite://` URLs (SQLAlchemy slash convention).
+  Covered by a real, in-process end-to-end test (discovery → Fetcher → SELECT).
+- **MySQL / MariaDB** (`MySQLDiscovery` + `MySQLDriver`): introspects
+  `information_schema` over aiomysql; each table/view in the connected database
+  becomes a read endpoint (`mysql://user:pass@host/db`). Server error codes map
+  onto HTTP-like status (1045→401, 1146→404, …). New extra `liquid-api[mysql]`.
+  Live-verified against a public read-only MySQL (EBI/Rfam).
+- Both drivers reuse the same filters / offset-pagination / recovery as Postgres;
+  the agent-facing `fetch`/`query` API is unchanged. Discovery matches DB DSNs
+  first so a `mysql://` / `sqlite://` URL short-circuits the HTTP probes.
+
+Graph (Neo4j/Cypher) is the next database driver on this abstraction.
+
 ## [0.40.0] - 2026-05-28
 
 ### Added — databases as interfaces (Phase 6): Postgres + pgvector

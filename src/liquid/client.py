@@ -16,10 +16,12 @@ from liquid.discovery.diff import diff_schemas
 from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.mcp import MCPDiscovery
+from liquid.discovery.mysql import MySQLDiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.plugin_manifest import PluginManifestDiscovery
 from liquid.discovery.postgres import PostgresDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
+from liquid.discovery.sqlite import SQLiteDiscovery
 from liquid.discovery.websocket import WSDiscovery
 from liquid.discovery.wsdl import WSDLDiscovery
 from liquid.exceptions import ActionNotVerifiedError, LiquidError, Recovery
@@ -318,9 +320,12 @@ class Liquid:
         try:
             pipeline = DiscoveryPipeline(
                 [
-                    # A Postgres DSN can't be probed over HTTP — match it first so a
-                    # `postgres://` URL short-circuits before the wire/HTTP strategies.
+                    # Database DSNs can't be probed over HTTP — match them first so a
+                    # `postgres://` / `mysql://` / `sqlite://` URL short-circuits before
+                    # the wire/HTTP strategies.
                     PostgresDiscovery(),
+                    MySQLDiscovery(),
+                    SQLiteDiscovery(),
                     GRPCDiscovery(),
                     WSDiscovery(),
                     MCPDiscovery(),
