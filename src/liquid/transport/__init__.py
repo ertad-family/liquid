@@ -19,8 +19,10 @@ from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.grpc_driver import GRPCDriver
 from liquid.transport.http import HTTPDriver
 from liquid.transport.mcp_driver import MCPDriver
+from liquid.transport.mysql import MySQLDriver
 from liquid.transport.postgres import PostgresDriver
 from liquid.transport.soap import SOAPDriver
+from liquid.transport.sqlite import SQLiteDriver
 from liquid.transport.websocket import WSDriver
 
 register_driver(HTTPDriver())
@@ -31,6 +33,8 @@ register_driver(WSDriver())
 register_driver(MCPDriver())
 register_driver(A2ADriver())
 register_driver(PostgresDriver())
+register_driver(MySQLDriver())
+register_driver(SQLiteDriver())
 
 __all__ = [
     "A2ADriver",
@@ -40,9 +44,11 @@ __all__ = [
     "GraphQLDriver",
     "HTTPDriver",
     "MCPDriver",
+    "MySQLDriver",
     "PostgresDriver",
     "ProtocolDriver",
     "SOAPDriver",
+    "SQLiteDriver",
     "WSDriver",
     "get_driver",
     "register_driver",
