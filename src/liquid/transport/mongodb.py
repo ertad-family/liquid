@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from liquid.transport._sql import DSNError, coerce_limit, coerce_offset, coerce_value, resolve_dsn
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,48 @@ class MongoDBDriver:
         next_cursor = str(offset + limit) if len(docs) >= limit else None
         return DriverResponse(status_code=200, records=records, next_cursor=next_cursor)
 
+    async def write(self, ctx: WriteContext) -> DriverResponse:
+        from pymongo import AsyncMongoClient
+
+        meta = ctx.endpoint.transport_meta or {}
+        collection = meta.get("collection")
+        if not collection:
+            return DriverResponse(status_code=400, error_body="no collection in endpoint metadata")
+        try:
+            uri = await resolve_dsn(ctx, _MONGO_SCHEMES)
+        except DSNError as e:
+            return DriverResponse(status_code=401, error_body=str(e)[:500])
+        database = meta.get("database") or _database_from_uri(uri)
+        if not database:
+            return DriverResponse(status_code=400, error_body="MongoDB URI must include a database")
+
+        op = ctx.op
+        values = _safe_doc(ctx.values or {})
+        where = _safe_doc(ctx.where or {})
+        # No blanket update/delete; insert/update need a document body.
+        if op in ("update", "delete") and not where:
+            return DriverResponse(status_code=400, error_body=f"{op} requires a non-empty where")
+        if op in ("insert", "update") and not values:
+            return DriverResponse(status_code=400, error_body=f"{op} requires values")
+
+        client: Any = AsyncMongoClient(uri)
+        try:
+            coll = client[database][collection]
+            if op == "insert":
+                await coll.insert_one(values)
+                affected = 1
+            elif op == "update":
+                affected = (await coll.update_many(where, {"$set": values})).modified_count
+            elif op == "delete":
+                affected = (await coll.delete_many(where)).deleted_count
+            else:
+                return DriverResponse(status_code=400, error_body=f"unsupported op {op!r}")
+        except Exception as e:
+            return _map_mongo_error(e)
+        finally:
+            await client.close()
+        return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
+
 
 def _build_filter(params: dict[str, Any]) -> dict[str, Any]:
     """Equality filter from scalar params. Dict values are skipped so a caller
@@ -78,6 +120,11 @@ def _build_filter(params: dict[str, Any]) -> dict[str, Any]:
 
 def _database_from_uri(uri: str) -> str | None:
     return (urlsplit(uri).path or "").lstrip("/").split("/", 1)[0] or None
+
+
+def _safe_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``$``-prefixed keys so a write can't smuggle in Mongo query operators."""
+    return {k: v for k, v in doc.items() if not (isinstance(k, str) and k.startswith("$"))}
 
 
 def _coerce_doc(doc: dict[str, Any]) -> dict[str, Any]:

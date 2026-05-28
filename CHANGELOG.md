@@ -2,6 +2,26 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.48.0] - 2026-05-28
+
+### Added — writes reach the agent + NoSQL writes
+Completes the write story: writes are now exposed through the MCP product surface,
+and the document/key-value stores can write too (all 8 databases are read+write).
+
+- **`liquid_execute` MCP tool.** The MCP server can now mutate a connected
+  database (insert/update/delete) — but only when started with
+  `LIQUID_ALLOW_WRITES=1`. The mutating tool is otherwise **not even listed**, so
+  the default agent surface stays read-only (safe for shared/untrusted agents).
+  Carries destructive/non-read-only annotations. Closes the gap where writes
+  existed in the library but couldn't be reached by Claude Desktop / Cursor / etc.
+- **MongoDB writes** — `insert` (`insert_one`), `update` (`update_many` + `$set`),
+  `delete` (`delete_many`); `$`-prefixed keys are stripped so a write can't smuggle
+  in query operators; non-empty `where` required for update/delete.
+- **Redis writes** — `insert`/`update` → `SET` (or `HSET` when a `field` is given),
+  `delete` → `DEL`. Live-verified end-to-end against a real Redis.
+- `supports_write()` now true for all eight database drivers; wire protocols stay
+  read-only.
+
 ## [0.47.0] - 2026-05-28
 
 ### Added — database writes (INSERT / UPDATE / DELETE)

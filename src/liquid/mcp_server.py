@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 
 from liquid.client import Liquid
@@ -32,6 +33,16 @@ logger = logging.getLogger(__name__)
 _MAX_RECORDS = 100  # cap data returned to the agent to keep MCP messages sane
 
 
+def _writes_enabled() -> bool:
+    """Whether this server may perform writes. Off unless explicitly opted in.
+
+    Mutating tools (``liquid_execute``) are only listed/accepted when
+    ``LIQUID_ALLOW_WRITES`` is set truthy — the deployment operator decides,
+    so the default surface stays read-only (safe for shared / untrusted agents).
+    """
+    return os.environ.get("LIQUID_ALLOW_WRITES", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _build_liquid() -> tuple[Liquid, FileAdapterRegistry]:
     from liquid._defaults import CollectorSink
 
@@ -40,7 +51,7 @@ def _build_liquid() -> tuple[Liquid, FileAdapterRegistry]:
     return liquid, registry
 
 
-def _tool_definitions() -> list:
+def _tool_definitions(allow_writes: bool = False) -> list:
     """The MCP tool catalog.
 
     Kept as a standalone function (not inlined in ``list_tools``) so the schemas,
@@ -49,6 +60,9 @@ def _tool_definitions() -> list:
     help from a bare ``{"type": "string"}``), every tool declares behavioural
     annotations (read-only / open-world / idempotent), and every tool has an
     output schema so an agent knows the return shape before it calls.
+
+    ``allow_writes`` adds the mutating ``liquid_execute`` tool — omitted by default
+    so the catalog is read-only unless the operator opts in (``LIQUID_ALLOW_WRITES``).
     """
     from mcp.types import Tool, ToolAnnotations
 
@@ -91,7 +105,7 @@ def _tool_definitions() -> list:
         # so both success and error results validate against the declared output schema.
         return {"type": "object", "properties": {**props, "error": {"type": "string"}}, "additionalProperties": True}
 
-    return [
+    tools = [
         Tool(
             name="liquid_connect",
             title="Connect to an API (one-time setup)",
@@ -341,6 +355,60 @@ def _tool_definitions() -> list:
         ),
     ]
 
+    if allow_writes:
+        tools.append(
+            Tool(
+                name="liquid_execute",
+                title="Write to a database (insert/update/delete)",
+                description=(
+                    "Mutate data in a connected database: INSERT, UPDATE, or DELETE a row. Only database "
+                    "adapters (postgres/mysql/sqlite/duckdb/mssql) support this; API adapters are read-only here. "
+                    "`update` and `delete` require a non-empty `where` (no blanket mutations); columns are "
+                    "validated against the discovered schema and every value is parameterized. This tool is only "
+                    "available because the server was started with LIQUID_ALLOW_WRITES=1. Returns "
+                    "{success, op, endpoint, affected_rows}."
+                ),
+                annotations=ToolAnnotations(
+                    title="Write to a database (insert/update/delete)",
+                    readOnlyHint=False,
+                    destructiveHint=True,
+                    idempotentHint=False,
+                    openWorldHint=True,
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "adapter_id": adapter_id,
+                        "endpoint": endpoint,
+                        "op": {
+                            "type": "string",
+                            "enum": ["insert", "update", "delete"],
+                            "description": "The write operation to perform.",
+                        },
+                        "values": {
+                            "type": "object",
+                            "description": 'Row fields to write (insert/update), e.g. {"name": "a", "age": 3}.',
+                            "additionalProperties": True,
+                        },
+                        "where": {
+                            "type": "object",
+                            "description": "Equality filter selecting rows (required for update/delete).",
+                            "additionalProperties": True,
+                        },
+                    },
+                    "required": ["adapter_id", "op"],
+                },
+                outputSchema=_out(
+                    {
+                        "success": {"type": "boolean"},
+                        "op": {"type": "string"},
+                        "affected_rows": {"type": "number"},
+                    }
+                ),
+            )
+        )
+    return tools
+
 
 def create_server():
     """Build the MCP Server. Requires ``pip install 'liquid-api[mcp]'``."""
@@ -350,6 +418,7 @@ def create_server():
         raise ImportError("MCP SDK not installed. Run: pip install 'liquid-api[mcp]'") from e
 
     liquid, registry = _build_liquid()
+    allow_writes = _writes_enabled()
     server = Server("liquid")
 
     def _ok(obj: dict) -> dict:
@@ -375,7 +444,7 @@ def create_server():
 
     @server.list_tools()
     async def list_tools() -> list:
-        return _tool_definitions()
+        return _tool_definitions(allow_writes)
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list:
@@ -454,6 +523,22 @@ def create_server():
                     return _ok({"error": f"adapter {arguments['adapter_id']} not found"})
                 est = await liquid.estimate_fetch(config, arguments.get("endpoint"))
                 return _ok({"estimate": est.model_dump(mode="json")})
+
+            if name == "liquid_execute":
+                if not allow_writes:
+                    return _ok({"error": "writes are disabled; start the server with LIQUID_ALLOW_WRITES=1 to enable"})
+                config = await _find(arguments["adapter_id"])
+                if config is None:
+                    return _ok({"error": f"adapter {arguments['adapter_id']} not found"})
+                result = await liquid.write(
+                    config,
+                    arguments.get("endpoint"),
+                    op=arguments["op"],
+                    values=arguments.get("values") or {},
+                    where=arguments.get("where") or {},
+                    allow_write=True,  # the server-level gate already authorized writes
+                )
+                return _ok(result)
 
             if name == "liquid_discover":
                 schema = await liquid.discover(arguments["url"], credentials=arguments.get("credentials"))

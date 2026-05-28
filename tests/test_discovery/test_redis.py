@@ -76,3 +76,47 @@ async def test_live_redis_discovery_and_fetch():
         for key in await client.keys("liqtest:*"):
             await client.delete(key)
         await client.aclose()
+
+
+@pytest.mark.network
+async def test_live_redis_write_set_and_delete():
+    pytest.importorskip("redis")
+    import redis.asyncio as redis_async
+
+    from liquid.exceptions import VaultError
+    from liquid.models.schema import Endpoint
+    from liquid.sync.fetcher import Fetcher
+
+    class FakeVault:
+        async def get(self, key):
+            raise VaultError(key)
+
+        async def store(self, key, value): ...
+        async def delete(self, key): ...
+
+    client = redis_async.from_url(_REDIS_URL, decode_responses=True)
+    try:
+        await client.ping()
+    except Exception as e:
+        await client.aclose()
+        pytest.skip(f"Redis unreachable: {e}")
+
+    ep = Endpoint(
+        path="/liqtest", protocol="redis", method="GET", transport_meta={"kind": "namespace", "prefix": "liqtest"}
+    )
+    import httpx
+
+    try:
+        async with httpx.AsyncClient() as http_client:
+            fetcher = Fetcher(http_client=http_client, vault=FakeVault())
+            wrote = await fetcher.write(ep, _REDIS_URL, "none", op="insert", values={"key": "liqtest:w", "value": "42"})
+            assert wrote.records[0]["affected_rows"] == 1
+            assert await client.get("liqtest:w") == "42"
+
+            deleted = await fetcher.write(ep, _REDIS_URL, "none", op="delete", where={"key": "liqtest:w"})
+            assert deleted.records[0]["affected_rows"] == 1
+            assert await client.get("liqtest:w") is None
+    finally:
+        for key in await client.keys("liqtest:*"):
+            await client.delete(key)
+        await client.aclose()
