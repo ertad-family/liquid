@@ -2,6 +2,16 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.49.1] - 2026-05-28
+
+### Changed
+- README rewritten around the real positioning — "connect your AI agent to
+  anything" (web APIs, other agents, and 8 databases; read **and** write;
+  auto-discovered, token-efficient, self-healing) — replacing the narrower
+  "agent-native API fabric / any HTTP API" framing. Docs-only; propagates the
+  new package description to PyPI. (No code change; the full read+write feature
+  set shipped in 0.47.0–0.49.0.)
+
 ## [0.49.0] - 2026-05-28
 
 ### Added — Neo4j (graph) writes
