@@ -2,7 +2,7 @@
 
 ## Overview
 
-Liquid is a **transformation layer between AI agents and any HTTP API**. It separates one-time cognitive work (discovery + mapping) from per-call mechanical work (fetch + transform), so an agent can talk to a new API the way it already talks to tools it knows.
+Liquid is a **transformation layer between AI agents and any interface** — web APIs (REST/GraphQL/SOAP/gRPC/WebSocket), other agents (MCP/A2A), and databases (SQL, graph, document, key-value). It separates one-time cognitive work (discovery + mapping) from per-call mechanical work (fetch/write + transform), so an agent can talk to a new interface the way it already talks to tools it knows — read and write, without a hand-written connector.
 
 The pipeline has four stages:
 
@@ -25,31 +25,32 @@ Liquid is a library, not a service. It ships with in-memory defaults, a clean se
 
 ## Discovery pipeline
 
-`Liquid.discover(url)` runs discovery strategies in decreasing reliability order, stopping at the first that produces an `APISchema`:
+`Liquid.discover(url)` first **fingerprints** the target (URL scheme, well-known
+port, or a socket banner — a bare `host:port` is normalized, e.g. `db:5432` →
+`postgresql://db:5432`), then runs discovery strategies in decreasing-reliability
+order, stopping at the first that produces an `APISchema`. The registered
+strategies (see `client.py`):
 
 ```
-Level 1: MCP
-  Service exposes an MCP server. Tools + resources are already typed and
-  described. Cheapest, most accurate, zero LLM involvement.
+Databases   Postgres / MySQL / SQLite / DuckDB / SQL Server (catalog introspection),
+            Neo4j (labels + relationship types), MongoDB (collection sampling),
+            Redis (keyspace SCAN). Zero LLM — the catalog is authoritative.
 
-Level 2: OpenAPI
-  Service has /openapi.json or /swagger.json. Parsed into Endpoint objects
-  with parameter schemas, response schemas (with $ref resolution), and
-  declared auth. No LLM unless a field description needs summarizing.
+Agents      MCP (tools + resources, already typed), A2A (AgentCard), plugin
+            manifest (/.well-known/ai-plugin.json → its OpenAPI). Cheap, accurate.
 
-Level 3: GraphQL
-  Service exposes a /graphql endpoint with introspection. The schema is
-  translated into REST-shaped endpoints for the rest of the pipeline.
+Wire APIs   gRPC (reflection), WebSocket (frame sampling), OpenAPI
+            (/openapi.json | /swagger.json, $ref-resolved), GraphQL
+            (introspection), SOAP/WSDL. Little to no LLM.
 
-Level 4: REST heuristic
-  No machine-readable spec. Liquid probes common paths (/api, /api/v1,
-  /docs, /swagger.json), reads HTML documentation, and lets the LLM infer
-  endpoints + shapes from examples.
+REST heuristic   No machine-readable spec — probe common paths, read docs, let
+            the LLM infer endpoints + shapes from examples.
 
-Level 5: Browser
-  Last resort (requires liquid-api[browser]). A headless Playwright session
-  logs in and captures network traffic to reverse-engineer a private API.
-  Slowest, most fragile — used only when no other strategy fits.
+Browser     Last resort (liquid-api[browser]). Headless Playwright captures
+            network traffic to reverse-engineer a private API. Slowest, fragile.
+
+User SQL    Backends registered as data via register_sql_manifest({...}) — a
+            dialect manifest (no code) discovered through the same pipeline.
 ```
 
 The pipeline is composable — implement `DiscoveryStrategy` (`async def discover(url) -> APISchema | None`) and plug it into a custom `DiscoveryPipeline`. See `EXTENDING.md`.
@@ -191,7 +192,7 @@ await liquid.execute_intent(
 
 and the runtime translates into Stripe's `/charges`, Braintree's `/transactions/sale`, Adyen's `/payments`, etc. — identical call, identical response shape.
 
-Shipped intents: `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `send_email`, `post_message`, `create_ticket`, `close_ticket`, `list_orders`, `cancel_order`. `liquid.list_canonical_intents()` enumerates; `liquid.get_intent(name)` returns the canonical schema.
+71 canonical intents ship today — e.g. `charge_customer`, `refund_charge`, `create_customer`, `update_customer`, `send_email`, `send_message`, `create_ticket`, `close_ticket`, `list_orders`, `cancel_order`. `liquid.list_canonical_intents()` enumerates; `liquid.get_intent(name)` returns the canonical schema.
 
 ### Structured recovery
 

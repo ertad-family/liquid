@@ -2,6 +2,25 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.49.2] - 2026-05-28
+
+### Docs
+Accuracy + positioning pass across all documentation (no code change).
+- **Install simplified**: the bundled MCP server runs as `uvx liquid-mcp` (the
+  `liquid-mcp` PyPI package makes package-name == command — no `--from` needed),
+  or `liquid-mcp` after `pip install liquid-api`. Dropped every misleading
+  `liquid-api[mcp]` (mcp is a core dependency; the extra is a no-op).
+- **Corrected facts** found in an audit: `execute_intent(adapter, …)` (was missing
+  the adapter arg); canonical intents 10 → **71** and `post_message` → `send_message`
+  (README/QUICKSTART/ARCHITECTURE); ARCHITECTURE discovery pipeline updated from the
+  old 5-level snapshot to the real strategy set (databases / gRPC / WS / MCP / A2A /
+  plugin / SOAP / manifest + fingerprint); fixed the external MCP-registry entry
+  (real run command + real tool list); `pip install liquid` → `liquid-api` in a draft.
+- **Positioning**: stopped presenting "no LLM per fetch" as the pitch (any client
+  fetches without a model) — the value is no hand-written/maintained connector +
+  self-heal + token-efficiency; "AI only at setup" remains as a cost/reproducibility
+  note. `docs/SPEC-WRITE-OPERATIONS.md` marked superseded.
+
 ## [0.49.1] - 2026-05-28
 
 ### Changed
