@@ -17,11 +17,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from liquid.transport._sql import SQLITE, WriteError, build_plain_select, build_write, coerce_row
+from liquid.transport._sql import (
+    SQLITE,
+    WriteError,
+    build_plain_select,
+    build_write,
+    coerce_row,
+    run_sql_delta_sense,
+)
 from liquid.transport.base import DriverResponse, FetchContext, WriteContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext, SenseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +74,24 @@ class SQLiteDriver:
         except Exception as e:
             return _map_sqlite_error(e)
         return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Perceive new rows by delta-polling a monotonic key (shared SQL sense loop).
+
+        Each appended row becomes a ``modality="data"`` event; the cursor is the
+        watch column (``transport_meta["watch_column"]``, else PK, else ``rowid``)
+        so a consumer resumes without re-seeing rows. No triggers, any table.
+        """
+        meta = ctx.endpoint.transport_meta or {}
+        path = meta.get("db_path") or _sqlite_path(ctx.base_url or "")
+        if not path:
+            return
+
+        async def run_query(sql: str, args: list) -> list[dict]:
+            return await asyncio.to_thread(_run_query, path, sql, args)
+
+        async for event in run_sql_delta_sense(ctx, SQLITE, run_query):
+            yield event
 
 
 def _run_query(path: str, sql: str, args: list[Any]) -> list[dict[str, Any]]:

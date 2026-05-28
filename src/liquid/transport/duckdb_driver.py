@@ -14,11 +14,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from liquid.transport._sql import DUCKDB, WriteError, build_plain_select, build_write, coerce_row
+from liquid.transport._sql import DUCKDB, WriteError, build_plain_select, build_write, coerce_row, run_sql_delta_sense
 from liquid.transport.base import DriverResponse, FetchContext, WriteContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext, SenseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +64,19 @@ class DuckDBDriver:
         except Exception as e:
             return _map_duckdb_error(e)
         return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Delta-poll new rows via the shared SQL sense loop (sync engine off-thread)."""
+        meta = ctx.endpoint.transport_meta or {}
+        path = meta.get("db_path") or _duckdb_path(ctx.base_url or "")
+        if not path:
+            return
+
+        async def run_query(sql: str, args: list) -> list[dict]:
+            return await asyncio.to_thread(_run_query, path, sql, args)
+
+        async for event in run_sql_delta_sense(ctx, DUCKDB, run_query):
+            yield event
 
 
 def _run_query(path: str, sql: str, args: list[Any]) -> list[dict[str, Any]]:

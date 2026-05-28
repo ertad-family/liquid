@@ -14,6 +14,8 @@ individual drivers.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -21,10 +23,12 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+from liquid.transport.base import SenseEvent
 
-    from liquid.transport.base import FetchContext
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterable, Sequence
+
+    from liquid.transport.base import FetchContext, SenseContext
 
 DEFAULT_LIMIT = 1000
 MAX_LIMIT = 10_000
@@ -214,6 +218,73 @@ def affected_from_status(status: str) -> int | None:
     if parts and parts[-1].isdigit():
         return int(parts[-1])
     return None
+
+
+# --- perception: shared delta-poll sense for every SQL backend ------------
+
+
+def _watch_column(meta: dict[str, Any]) -> str:
+    """The monotonic column to watch for new rows: explicit, else the PK, else rowid.
+
+    Delta-poll assumes an ascending integer key (auto-increment id / rowid) — the
+    dominant case. Timestamp watching is a future enhancement.
+    """
+    if meta.get("watch_column"):
+        return str(meta["watch_column"])
+    pk = meta.get("primary_key") or []
+    return str(pk[0]) if pk else "rowid"
+
+
+def build_delta_select(meta: dict[str, Any], watch_col: str, after: int, dialect: Dialect) -> tuple[str, list[Any]]:
+    """``SELECT <watch> AS __cursor__, * FROM rel WHERE <watch> > ? ORDER BY <watch> ASC``.
+
+    The watch value is aliased to ``__cursor__`` so it's always present (SQLite's
+    ``*`` omits the implicit ``rowid``); identifiers are quoted from introspection
+    and ``after`` is parameterized.
+    """
+    b = SelectBuilder(dialect)
+    rel = relation(meta.get("schema"), meta["table"], dialect)
+    col = quote_ident(watch_col, dialect)
+    alias = quote_ident("__cursor__", dialect)
+    ph = b.add_param(after)
+    sql = f"SELECT {col} AS {alias}, * FROM {rel} WHERE {col} > {ph} ORDER BY {col} ASC"
+    return sql, b.args
+
+
+async def run_sql_delta_sense(ctx: SenseContext, dialect: Dialect, run_query: Any) -> AsyncIterator[SenseEvent]:
+    """Shared delta-poll perception loop for SQL backends.
+
+    Each backend supplies ``run_query(sql, args) -> list[dict]`` over its own
+    connection (sync drivers wrap a thread call, async drivers query directly);
+    every returned row carries a ``__cursor__`` key (the watch value). This loop
+    owns the polling, cursoring, bounds (``max_events`` / ``max_seconds``) and
+    event shaping, so a driver's ``sense`` is a thin adapter. Errors end the
+    stream quietly (the table or connection went away).
+    """
+    meta = ctx.endpoint.transport_meta or {}
+    watch_col = _watch_column(meta)
+    last = coerce_offset(ctx.cursor, None)  # integer watch cursor; starts at 0
+    emitted = 0
+    loop = asyncio.get_running_loop()
+    deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
+
+    while True:
+        sql, args = build_delta_select(meta, watch_col, last, dialect)
+        try:
+            rows = await run_query(sql, args)
+        except Exception:
+            return
+        for row in rows:
+            cursor_val = row.pop("__cursor__", last)
+            with suppress(TypeError, ValueError):
+                last = int(cursor_val)
+            yield SenseEvent(source=ctx.endpoint.path, payload=coerce_row(row), cursor=str(last))
+            emitted += 1
+            if ctx.max_events is not None and emitted >= ctx.max_events:
+                return
+        if deadline is not None and loop.time() >= deadline:
+            return
+        await asyncio.sleep(ctx.poll_interval)
 
 
 def coerce_limit(raw: Any) -> int:

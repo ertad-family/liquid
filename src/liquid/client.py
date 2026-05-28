@@ -892,6 +892,77 @@ class Liquid:
         )
         return {"success": True, "op": op, "endpoint": ep_path, "affected_rows": affected}
 
+    async def sense(
+        self,
+        config: AdapterConfig,
+        endpoint: str | None = None,
+        *,
+        cursor: str | None = None,
+        params: dict[str, Any] | None = None,
+        poll_interval: float = 2.0,
+        max_events: int | None = None,
+        max_seconds: float | None = None,
+    ) -> Any:
+        """Perceive a live stream of events from an endpoint — the agent's senses.
+
+        The afferent counterpart of :meth:`write` (the agent's hands) and the
+        continuous counterpart of :meth:`fetch` (a one-shot pull). Yields
+        :class:`~liquid.transport.SenseEvent`s as the world produces them — a new
+        DB row (delta-poll), a published message (Redis pub/sub), etc. — each with
+        a ``modality`` (``"data"``/``"message"``/… — open for future senses) and a
+        ``cursor`` to resume.
+
+        Only sense-capable drivers support this (raises otherwise). Returns an
+        async iterator; consume with ``async for``. ``max_events`` / ``max_seconds``
+        bound the stream so it can't block forever.
+
+        ```python
+        async for event in await liquid.sense(adapter, "/orders", max_events=10):
+            print(event.modality, event.payload)
+        ```
+        """
+        from liquid.discovery.utils import managed_http_client
+        from liquid.transport import get_driver, supports_sense
+
+        ep_path = endpoint or config.sync.endpoints[0]
+        target_ep = next((ep for ep in config.schema_.endpoints if ep.path == ep_path), None)
+        if target_ep is None:
+            msg = f"Endpoint {ep_path} not found in adapter schema"
+            raise ValueError(msg)
+        if not supports_sense(get_driver(target_ep.protocol)):
+            raise LiquidError(
+                f"The {target_ep.protocol!r} interface can't be sensed — no live event stream.",
+                recovery=Recovery(
+                    hint="sense() works on event/stream-capable endpoints (e.g. SQLite, Redis).",
+                    retry_safe=False,
+                ),
+            )
+
+        async def _iter() -> Any:
+            async with managed_http_client(self._http_client) as client:
+                fetcher = Fetcher(
+                    http_client=client,
+                    vault=self.vault,
+                    adapter_id=config.config_id,
+                    rate_limiter=self.rate_limiter,
+                    telemetry=self.telemetry,
+                )
+                stream = await fetcher.sense(
+                    endpoint=target_ep,
+                    base_url=config.schema_.source_url,
+                    auth_ref=config.auth_ref,
+                    cursor=cursor,
+                    extra_params=params,
+                    poll_interval=poll_interval,
+                    max_events=max_events,
+                    max_seconds=max_seconds,
+                    auth_scheme=config.auth_scheme,
+                )
+                async for event in stream:
+                    yield event
+
+        return _iter()
+
     async def stream(
         self,
         config: AdapterConfig,

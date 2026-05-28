@@ -20,7 +20,7 @@ function-locally so the core stays dependency-free.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from liquid.transport._sql import (
     POSTGRES,
@@ -38,9 +38,15 @@ from liquid.transport._sql import (
     quote_ident,
     relation,
     resolve_dsn,
+    run_sql_delta_sense,
     to_float_vector_literal,
 )
 from liquid.transport.base import DriverResponse, FetchContext, WriteContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext, SenseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +115,28 @@ class PostgresDriver:
         finally:
             await conn.close()
         return DriverResponse(status_code=200, records=[{"affected_rows": affected_from_status(status)}])
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Delta-poll new rows via the shared SQL sense loop (one asyncpg conn per session)."""
+        import asyncpg
+
+        try:
+            dsn = await _resolve_dsn(ctx)
+        except DSNError:
+            return
+        try:
+            conn = await asyncpg.connect(dsn)
+        except Exception:
+            return
+
+        async def run_query(sql: str, args: list) -> list[dict]:
+            return [dict(r) for r in await conn.fetch(sql, *args)]
+
+        try:
+            async for event in run_sql_delta_sense(ctx, POSTGRES, run_query):
+                yield event
+        finally:
+            await conn.close()
 
 
 def _build_query(

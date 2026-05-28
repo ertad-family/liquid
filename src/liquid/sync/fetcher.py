@@ -274,6 +274,63 @@ class Fetcher:
             _check_status(wire.status_code, wire.error_body or "", wire.headers)
         return wire
 
+    async def sense(
+        self,
+        endpoint: Endpoint,
+        base_url: str,
+        auth_ref: str,
+        *,
+        cursor: str | None = None,
+        extra_params: dict[str, Any] | None = None,
+        poll_interval: float = 2.0,
+        max_events: int | None = None,
+        max_seconds: float | None = None,
+        auth_scheme: AuthScheme | None = None,
+    ) -> Any:
+        """Perceive a live stream of events from an endpoint — the afferent path.
+
+        Mirrors :meth:`fetch`/:meth:`write` for the continuous direction: builds a
+        :class:`~liquid.transport.SenseContext`, dispatches to the driver's
+        ``sense`` (which must implement :class:`~liquid.transport.SenseDriver`),
+        and yields :class:`~liquid.transport.SenseEvent`s. Returns an async
+        iterator; consume with ``async for``.
+        """
+        from liquid.transport import SenseContext, get_driver, supports_sense
+
+        driver = get_driver(endpoint.protocol)
+        if not supports_sense(driver):
+            raise SyncRuntimeError(
+                f"The {endpoint.protocol!r} driver can't perceive — sense() is not supported here.",
+                recovery=Recovery(
+                    hint="sense() is supported for event/stream-capable endpoints (e.g. SQLite, Redis).",
+                    retry_safe=False,
+                ),
+            )
+
+        auth: httpx.Auth | None = None
+        if auth_scheme is not None:
+            auth = await auth_scheme.build_httpx_auth(self.vault, auth_ref)
+
+        ctx = SenseContext(
+            endpoint=endpoint,
+            base_url=base_url,
+            params=extra_params or {},
+            vault=self.vault,
+            auth_ref=auth_ref,
+            cursor=cursor,
+            poll_interval=poll_interval,
+            max_events=max_events,
+            max_seconds=max_seconds,
+            auth=auth,
+            http_client=self.http_client,
+        )
+
+        async def _iter() -> Any:
+            async for event in driver.sense(ctx):
+                yield event
+
+        return _iter()
+
 
 def _resolve_ttl(override_ttl: int | None, headers: dict[str, str]) -> int:
     """Determine TTL: override > Cache-Control header > default (0)."""

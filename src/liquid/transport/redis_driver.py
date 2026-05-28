@@ -15,11 +15,16 @@ core stays dependency-free.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from liquid.transport._sql import coerce_limit, coerce_value, resolve_dsn
-from liquid.transport.base import DriverResponse, FetchContext, WriteContext
+from liquid.transport.base import DriverResponse, FetchContext, SenseContext, SenseEvent, WriteContext
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +100,55 @@ class RedisDriver:
         finally:
             await _aclose(client)
         return DriverResponse(status_code=200, records=[{"affected_rows": affected}])
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Perceive published messages on the namespace via Redis pub/sub.
+
+        Subscribes to the keyspace pattern (``prefix:*`` from discovery, or an
+        explicit ``params["channel"]``) and yields each message as a
+        ``modality="message"`` event. This is a *native push* sense — Redis
+        delivers as publishers fire, no polling.
+        """
+        import redis.asyncio as redis_async
+
+        try:
+            url = await resolve_dsn(ctx, _REDIS_SCHEMES)
+        except Exception:
+            url = ctx.base_url or ""
+        if not _is_redis_url(url):
+            return
+        meta = ctx.endpoint.transport_meta or {}
+        pattern = (ctx.params or {}).get("channel") or _pattern(meta.get("prefix", ""))
+
+        client = redis_async.from_url(url, decode_responses=True)
+        pubsub = client.pubsub()
+        emitted = 0
+        loop = asyncio.get_running_loop()
+        deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
+        try:
+            await pubsub.psubscribe(pattern)
+            while True:
+                timeout = ctx.poll_interval
+                if deadline is not None:
+                    timeout = min(timeout, max(0.0, deadline - loop.time()))
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=timeout)
+                if msg is not None:
+                    yield SenseEvent(
+                        source=ctx.endpoint.path,
+                        modality="message",
+                        payload={"channel": msg.get("channel"), "value": coerce_value(msg.get("data"))},
+                    )
+                    emitted += 1
+                    if ctx.max_events is not None and emitted >= ctx.max_events:
+                        return
+                if deadline is not None and loop.time() >= deadline:
+                    return
+        except Exception:
+            return
+        finally:
+            with contextlib.suppress(Exception):
+                await pubsub.aclose()
+            await _aclose(client)
 
 
 def _pattern(prefix: str) -> str:

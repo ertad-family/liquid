@@ -2,6 +2,44 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.51.0] - 2026-05-28
+
+### Added — `sense` extended to every SQL backend
+The delta-poll perception loop is now shared (`liquid.transport._sql.run_sql_delta_sense`)
+and wired into **all five relational drivers** — Postgres, MySQL, SQLite, DuckDB,
+SQL Server — alongside Redis pub/sub. Six sense-capable interfaces total. SQLite's
+bespoke poller was refactored onto the shared loop. DuckDB delta-sense verified
+in-process; the async SQL backends share the same verified path.
+
+> **Note:** 0.50.0 was published from a release that accidentally omitted the
+> `sense` code (the feature branch never merged into the release line — the tag
+> pointed at a commit without it), so 0.50.0 is effectively a no-op version.
+> **`sense` ships for real in 0.51.0** — the full feature below plus the SQL
+> extension above.
+
+### `sense` — the agent's perception (afferent organ)
+Liquid is an agent's senses **and** hands. `write`/`execute` were the hands
+(act on the world); `sense` is the missing senses — a live stream of events the
+world produces, the continuous counterpart of the one-shot `fetch` pull.
+
+- **Transport abstraction:** `SenseEvent` (modality-agnostic by design —
+  `modality` tags the signal, `"data"` today, open for `"audio"`/`"telemetry"`/…
+  as agents gain new senses; `payload` is open; `cursor` resumes), `SenseContext`,
+  a `SenseDriver` protocol, and `supports_sense(driver)`. `Fetcher.sense(...)` and
+  `Liquid.sense(...)` yield events; bounded by `max_events` / `max_seconds` so a
+  stream never blocks forever.
+- **Reference sense drivers:** **SQLite** delta-poll (new rows past a watch-column
+  cursor — works on any table, no triggers; verified in-process) and **Redis**
+  pub/sub (native push; live-verified). Same `ProtocolDriver` abstraction as
+  everything else.
+- **`liquid_sense` MCP tool** — "check the agent's senses": a bounded drain-by-pull
+  (events since `cursor` → batch + `next_cursor`) so an MCP agent (Claude Code,
+  Cursor, …) can stay aware of changes within its pull-based loop. Read-only,
+  ships in the default surface (no write gate).
+
+This completes the sensorimotor loop: `fetch` (probe), **`sense` (perceive)**,
+`write` (act).
+
 ## [0.49.2] - 2026-05-28
 
 ### Docs
