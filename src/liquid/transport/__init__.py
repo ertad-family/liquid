@@ -20,6 +20,7 @@ from liquid.transport.grpc_driver import GRPCDriver
 from liquid.transport.http import HTTPDriver
 from liquid.transport.mcp_driver import MCPDriver
 from liquid.transport.mysql import MySQLDriver
+from liquid.transport.neo4j_driver import Neo4jDriver
 from liquid.transport.postgres import PostgresDriver
 from liquid.transport.soap import SOAPDriver
 from liquid.transport.sqlite import SQLiteDriver
@@ -35,6 +36,7 @@ register_driver(A2ADriver())
 register_driver(PostgresDriver())
 register_driver(MySQLDriver())
 register_driver(SQLiteDriver())
+register_driver(Neo4jDriver())
 
 __all__ = [
     "A2ADriver",
@@ -45,6 +47,7 @@ __all__ = [
     "HTTPDriver",
     "MCPDriver",
     "MySQLDriver",
+    "Neo4jDriver",
     "PostgresDriver",
     "ProtocolDriver",
     "SOAPDriver",

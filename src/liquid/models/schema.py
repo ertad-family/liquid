@@ -117,6 +117,7 @@ class APISchema(BaseModel):
         "postgres",
         "mysql",
         "sqlite",
+        "neo4j",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)
     auth: AuthRequirement
