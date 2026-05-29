@@ -1,7 +1,7 @@
 [project]
 name = "liquid-api"
-version = "0.51.0"
-description = "Zapier for AI agents. Connect to any API on the fly."
+version = "0.51.1"
+description = "Connect your AI agent to anything — APIs, databases, and agents; read, write, and sense."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
@@ -48,6 +48,13 @@ anthropic = [
     "anthropic>=0.40",
 ]
 litellm = [
+    "litellm>=1.0",
+]
+# One umbrella so discovery of spec-less REST APIs + field mapping works out of
+# the box: LiteLLM reaches OpenAI / Gemini / Anthropic / local / 100+ providers
+# (set LIQUID_LLM_PROVIDER=litellm, LIQUID_LLM_MODEL=...). Self-describing APIs
+# (OpenAPI/GraphQL/gRPC/MCP/WSDL) and all databases need no LLM at all.
+discovery = [
     "litellm>=1.0",
 ]
 grpc = [
