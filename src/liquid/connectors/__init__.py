@@ -8,6 +8,7 @@ as :class:`~liquid.transport.SenseEvent`s (compose with ``react`` /
 """
 
 from liquid.connectors.home_assistant import HomeAssistantConnector
+from liquid.connectors.smartcar import SmartcarConnector
 from liquid.connectors.telegram import TelegramConnector
 
-__all__ = ["HomeAssistantConnector", "TelegramConnector"]
+__all__ = ["HomeAssistantConnector", "SmartcarConnector", "TelegramConnector"]

@@ -2,6 +2,25 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.61.0] - 2026-05-29
+
+### Added — Smartcar connector (cars as senses & hands)
+`liquid.connectors.SmartcarConnector` connects an agent to a connected vehicle
+through Smartcar's unified API (~30+ brands — Tesla, Ford, BMW, VW, Hyundai, …),
+the "Home Assistant of cars": one OAuth2 REST integration reaches them all.
+
+- **Probe**: `location`, `battery`, `fuel`, `odometer`, `charge`, `info`.
+- **Hands**: `lock` / `unlock`, `start_charge` / `stop_charge`.
+- **Perceive**: `sense(vehicle_id, signals=("location","battery"), poll_interval=)`
+  — Smartcar has no live push, so this *delta-polls* the requested signals and
+  yields a `modality="data"` `SenseEvent` whenever one changes (baseline poll not
+  emitted). Composes with `react` / `merge_senses`. For true event push, point
+  Smartcar's webhooks at `Liquid.sense_webhook`.
+
+httpx-only (core). The OAuth2 access token is caller-supplied (run Smartcar
+Connect to obtain it), never persisted. Targets Smartcar API v2.0. Built against
+the documented contract; not yet verified against a live account.
+
 ## [0.60.0] - 2026-05-29
 
 ### Added — Home Assistant connector (smart home as senses & hands)
