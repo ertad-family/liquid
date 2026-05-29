@@ -327,6 +327,19 @@ notifications — each yielded as a modality-agnostic event. Pointed *inward*,
 (or a human, via a webhook) POSTing to the agent becomes a perceivable signal
 too. All bounded by `max_events` / `max_seconds`, so an agent can drain-by-pull.
 
+**The sensorimotor loop.** `react(stream, handler)` drives a handler for each
+perceived event — with error isolation and bounded concurrency — so a host can
+*perceive → wake the agent → act*. `merge_senses(*streams)` fans several senses
+into one loop, so one agent can watch a database, a queue, and a webhook at once:
+
+```python
+events = merge_senses(
+    await liquid.sense(orders, "/orders"),
+    await liquid.sense_webhook(port=8088, verifier=stripe_verifier),
+)
+await react(events, on_event, max_concurrency=4)
+```
+
 **Discovery is automatic — and identifies on the fly.** Before the pipeline runs,
 a fingerprint step names the target: a bare `host:port` is normalized by
 well-known port (`db:5432` → `postgresql://db:5432`), and `liquid.identify(url)`

@@ -2,6 +2,32 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.58.0] - 2026-05-29
+
+### Added — the sensorimotor loop (`react` + `merge_senses`)
+Host-side glue that turns perception into action — the afferent→efferent arc the
+library is built around. An LLM agent only acts when invoked, so a long-running
+host runs the loop: perceive an event, wake the agent, let it act (`write` /
+`execute`). Two pure-`asyncio` primitives (no new dependency), exported top-level:
+
+- **`react(stream, handler, *, max_concurrency=1, on_error=None)`** — consume a
+  sense stream and dispatch each event to an async `handler`, with **error
+  isolation** (one failing event never kills the loop; `on_error` or a log) and
+  **bounded concurrency** (back-pressure on the stream when handlers fall
+  behind). Returns the count dispatched.
+- **`merge_senses(*streams)`** — fan several sense streams into one, yielding
+  events in arrival order, so a single loop can watch a DB table *and* a Redis
+  channel *and* an inbound webhook at once. A failing source is dropped, not
+  fatal; pump tasks are cancelled on exit.
+
+```python
+events = merge_senses(
+    await liquid.sense(orders, "/orders"),          # SQL / LISTEN-NOTIFY
+    await liquid.sense_webhook(port=8088, verifier=v),  # inbound webhook
+)
+await react(events, handle, max_concurrency=4)      # perceive → act
+```
+
 ## [0.57.0] - 2026-05-29
 
 ### Added — MCP notifications as sense
