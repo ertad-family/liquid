@@ -2,6 +2,32 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.59.0] - 2026-05-29
+
+### Added — connectors: a human as a node (`TelegramConnector`)
+The senses and hands, pointed at *people*. `liquid.connectors.TelegramConnector`
+lets an agent perceive a human and act back over the Telegram Bot API:
+
+- **`sense(...)`** — long-polls `getUpdates` (server-held, push-like, not
+  busy-polling) and yields each incoming message as a `modality="message"`
+  `SenseEvent` with the `update_id` as a resumable cursor (acked as `offset` on
+  the next poll). Flattened payload surfaces `chat_id` / `text` / `from` with the
+  raw message kept under `message`. Composes with `react` / `merge_senses` like
+  any other sense. Bounded by `max_events` / `max_seconds`.
+- **`send(chat_id, text, **kwargs)`** — the hands: `sendMessage` back to a chat.
+- **`me()`** — `getMe`, to verify the token.
+
+httpx-only (a core dep); the bot token is supplied by the caller (pull from a
+vault/env — never persisted). New `liquid.connectors` package — the home for
+future human-facing connectors (Slack, voice).
+
+```python
+tg = TelegramConnector(bot_token)
+async def echo(e):
+    await tg.send(e.payload["chat_id"], f"echo: {e.payload['text']}")
+await react(tg.sense(), echo)        # perceive a person → answer them
+```
+
 ## [0.58.0] - 2026-05-29
 
 ### Added — the sensorimotor loop (`react` + `merge_senses`)

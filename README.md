@@ -24,6 +24,8 @@ doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
 - **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
   Neo4j (graph), MongoDB (documents), Redis (key-value)
+- **People** — a human as a node via `connectors` (Telegram today): perceive their
+  messages with `sense`, answer them with `send`
 
 Point it at a `https://…` endpoint, a `postgres://…` / `mongodb://…` / `redis://…`
 DSN, a `grpc://…` target, or another MCP server — discovery identifies the
