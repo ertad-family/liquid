@@ -2,6 +2,24 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.53.0] - 2026-05-29
+
+### Added — tiered adapter resolution (unify the lookup across sources)
+`get_or_create` now resolves an adapter across ordered **tiers** instead of only
+the local registry: **writable local registry → bundled wheel adapters → optional
+cloud catalog → discovery (last resort)**. So a request transparently reuses the
+best available adapter and only pays for discovery+LLM when nothing else matches.
+- Bundled adapters (0.52.0) are now wired into resolution via the new
+  `BundledAdapterRegistry` — a read-only `AdapterRegistry` over the wheel. An exact
+  url+model hit returns instantly with **no discovery and no LLM**.
+- `Liquid(..., catalog=<AdapterRegistry>)` adds any read-only registry as a lower
+  tier — the **extension point for the hosted cloud catalog** (and any custom
+  source). `use_bundled_adapters=False` opts out of the bundled tier.
+- Each tier is the same `AdapterRegistry` interface, so the cloud catalog, bundled
+  set, and local registry unify behind one lookup. (The cloud's public `/catalog`
+  API today returns browse metadata, not full adapters; delivering runnable
+  adapters to this tier needs a cloud-side endpoint — a follow-up in liquid-cloud.)
+
 ## [0.52.0] - 2026-05-29
 
 ### Added — bundled community adapters (public-domain, in the wheel)

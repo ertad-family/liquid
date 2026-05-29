@@ -4,7 +4,7 @@ from importlib.metadata import version as _pkg_version
 
 __version__ = _pkg_version("liquid-api")
 
-from liquid.adapters import list_bundled_adapters, load_bundled_adapter
+from liquid.adapters import BundledAdapterRegistry, list_bundled_adapters, load_bundled_adapter
 from liquid.agent_tools import (
     aggregate,
     check_quota,
@@ -165,6 +165,7 @@ __all__ = [
     "BatchErrorPolicy",
     "BatchResult",
     "BearerAuth",
+    "BundledAdapterRegistry",
     "CacheStore",
     "CallableBackend",
     "DataSink",
