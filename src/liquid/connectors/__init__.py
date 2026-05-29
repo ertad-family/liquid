@@ -7,6 +7,7 @@ as :class:`~liquid.transport.SenseEvent`s (compose with ``react`` /
 ``merge_senses``), and an action method (``send``) is the hands.
 """
 
+from liquid.connectors.home_assistant import HomeAssistantConnector
 from liquid.connectors.telegram import TelegramConnector
 
-__all__ = ["TelegramConnector"]
+__all__ = ["HomeAssistantConnector", "TelegramConnector"]

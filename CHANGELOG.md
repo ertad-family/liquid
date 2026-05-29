@@ -2,6 +2,27 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.60.0] - 2026-05-29
+
+### Added — Home Assistant connector (smart home as senses & hands)
+`liquid.connectors.HomeAssistantConnector` connects an agent to a whole smart
+home through one API — HA already abstracts thousands of devices.
+
+- **`sense(event_type="state_changed", ...)`** — subscribes to HA's WebSocket
+  event bus (running its `auth_required`→`auth`→`auth_ok`→`subscribe_events`
+  handshake) and yields each event as a `modality="message"` `SenseEvent`
+  (payload = `entity_id` / `new_state` / `old_state`, `source` = the entity).
+  Composes with `react` / `merge_senses` — the agent *perceives the home live*.
+- **`call_service(domain, service, entity_id=, **data)`** — the hands: call any
+  HA service (`light.turn_on`, `lock.lock`, `media_player.play_media`, …).
+- **`get_states()` / `get_state(entity_id)`** — probe current state;
+  **`config()`** — verify the token.
+
+REST on `httpx` (core); live `sense` needs the `ws` extra. The long-lived access
+token is caller-supplied, never persisted. Joins `TelegramConnector` under
+`liquid.connectors` (and note: HA itself fronts Android TV / Chromecast / etc.,
+so "agent controls the TV" comes through here without the per-device pairing).
+
 ## [0.59.2] - 2026-05-29
 
 ### Changed — sense streams leave a debug breadcrumb when they end on error

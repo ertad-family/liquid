@@ -24,8 +24,10 @@ doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
 - **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
   Neo4j (graph), MongoDB (documents), Redis (key-value)
-- **People** — a human as a node via `connectors` (Telegram today): perceive their
-  messages with `sense`, answer them with `send`
+- **People & places** — a human or a home as a node via `connectors`: Telegram
+  (perceive messages with `sense`, answer with `send`) and Home Assistant
+  (perceive a whole smart home's state changes with `sense`, act with
+  `call_service` — lights, locks, media, …)
 
 Point it at a `https://…` endpoint, a `postgres://…` / `mongodb://…` / `redis://…`
 DSN, a `grpc://…` target, or another MCP server — discovery identifies the

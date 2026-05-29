@@ -31,7 +31,7 @@ from liquid.auth.schemes import (
 from liquid.cache import InMemoryCache
 from liquid.catalog import HttpCatalogRegistry
 from liquid.client import Liquid
-from liquid.connectors import TelegramConnector
+from liquid.connectors import HomeAssistantConnector, TelegramConnector
 from liquid.diff_sync import FetchChangesResult
 from liquid.estimate import FetchEstimate, estimate_fetch
 from liquid.evolution import EvolutionKind, EvolutionSignal, extract_signals
@@ -200,6 +200,7 @@ __all__ = [
     "GeoPoint",
     "GitHubWebhookVerifier",
     "HMACAuth",
+    "HomeAssistantConnector",
     "HttpCatalogRegistry",
     "IdempotencyStore",
     "InMemoryCache",
