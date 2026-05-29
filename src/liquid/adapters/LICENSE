@@ -1,0 +1,11 @@
+The adapter data files (`*.json`) in this directory are released into the public
+domain under Creative Commons Zero v1.0 Universal (CC0 1.0).
+
+To the extent possible under law, the contributors have waived all copyright and
+related or neighboring rights to these adapter definitions. You may copy, modify,
+distribute, and use them, even for commercial purposes, without asking permission.
+
+Full text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+Note: this CC0 dedication applies ONLY to the adapter `*.json` data files in this
+directory. The Liquid source code is licensed separately under AGPL-3.0-only.

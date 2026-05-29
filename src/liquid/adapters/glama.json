@@ -1,0 +1,102 @@
+{
+  "target_model": "{\"description\": \"str\", \"downloads\": \"int\", \"license\": \"str\", \"name\": \"str\", \"stars\": \"int\", \"tool_count\": \"int\"}",
+  "config": {
+    "config_id": "bundled-glama",
+    "schema": {
+      "source_url": "https://glama.ai",
+      "service_name": "Glama",
+      "discovery_method": "rest_heuristic",
+      "endpoints": [
+        {
+          "path": "/api/mcp/v1/servers/ertad-family/liquid",
+          "method": "GET",
+          "description": "Discovered via probe (200)",
+          "protocol": "http",
+          "kind": "read",
+          "parameters": [],
+          "request_schema": null,
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "attributes": {
+                "type": "array"
+              },
+              "description": {
+                "type": "string"
+              },
+              "environmentVariablesJsonSchema": {
+                "type": "object"
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "repository": {
+                "type": "object"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "spdxLicense": {
+                "type": "object"
+              },
+              "tools": {
+                "type": "array"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          },
+          "pagination": null,
+          "idempotency_header": null,
+          "record_path": null,
+          "transport_meta": {}
+        }
+      ],
+      "auth": {
+        "type": "custom",
+        "tier": "C",
+        "oauth_config": null,
+        "docs_url": null
+      },
+      "rate_limits": null,
+      "discovered_at": "2026-05-29T14:49:02.606827Z",
+      "api_version": null
+    },
+    "auth_ref": "none",
+    "mappings": [
+      {
+        "source_path": "name",
+        "target_field": "name",
+        "transform": null,
+        "confidence": 1.0
+      },
+      {
+        "source_path": "description",
+        "target_field": "description",
+        "transform": null,
+        "confidence": 1.0
+      }
+    ],
+    "sync": {
+      "endpoints": [
+        "/api/mcp/v1/servers/ertad-family/liquid"
+      ],
+      "schedule": null,
+      "cursor_field": null,
+      "batch_size": 100,
+      "cache_ttl": {}
+    },
+    "actions": [],
+    "intents": [],
+    "verified_by": "liquid-bundled",
+    "version": 1,
+    "auth_scheme": null
+  }
+}
