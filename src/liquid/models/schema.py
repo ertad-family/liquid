@@ -112,6 +112,7 @@ class APISchema(BaseModel):
         "soap",
         "grpc",
         "websocket",
+        "sse",
         "a2a",
         "plugin",
         "postgres",

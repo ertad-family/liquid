@@ -13,6 +13,7 @@ in bounded batches (fetch) or perceives live (sense).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -40,8 +41,6 @@ class SSEDiscovery:
 
         framing: str | None = None
         samples: list[dict] = []
-        loop = asyncio.get_event_loop()
-        deadline = loop.time() + _SAMPLE_SECONDS
         try:
             async with self._http_client.stream("GET", url, follow_redirects=True) as response:
                 if not response.is_success:
@@ -49,15 +48,20 @@ class SSEDiscovery:
                 framing = _framing_from_content_type(response.headers.get("content-type", ""))
                 if framing is None:
                     return None  # not a stream — let REST/OpenAPI handle it
-                async for payload in _sample(response, framing):
-                    samples.append(payload)
-                    if len(samples) >= _SAMPLE_EVENTS or loop.time() >= deadline:
-                        break
-        except (OSError, RuntimeError) as e:
-            logger.info("SSE stream probe failed for %s: %s", url, e)
-            return None
-        except Exception:  # any stream/parse error means "not a clean stream here"
-            return None
+                # The content type already proves it's a stream; sampling a few
+                # events is best-effort, only to infer a record shape. An idle
+                # stream (no events in the window) must NOT void the discovery —
+                # bound sampling by a hard timeout and keep whatever we got.
+                with contextlib.suppress(Exception):
+                    async with asyncio.timeout(_SAMPLE_SECONDS):
+                        async for payload in _sample(response, framing):
+                            samples.append(payload)
+                            if len(samples) >= _SAMPLE_EVENTS:
+                                break
+        except Exception as e:
+            if framing is None:  # failed before we confirmed a stream → not ours
+                logger.info("SSE stream probe failed for %s: %s", url, e)
+                return None
 
         if framing is None:
             return None

@@ -9,6 +9,7 @@ Requires the `mcp` extra: pip install liquid[mcp]
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from typing import Any
@@ -24,6 +25,12 @@ from liquid.models.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bound the MCP handshake. Without this, pointing discovery at a long-lived
+# non-MCP stream (e.g. an SSE endpoint) makes the MCP client read the stream
+# forever waiting for a JSON-RPC `initialize` response that never comes —
+# hanging the whole pipeline before SSEDiscovery ever gets a turn.
+_MCP_HANDSHAKE_TIMEOUT = 8.0
 
 _MCP_AVAILABLE = False
 try:
@@ -64,10 +71,13 @@ class MCPDiscovery:
             candidates.append(f"{base}{self.mcp_path}")
         for candidate in candidates:
             try:
-                schema = await self._connect_and_discover(candidate, url)
+                async with asyncio.timeout(_MCP_HANDSHAKE_TIMEOUT):
+                    schema = await self._connect_and_discover(candidate, url)
             except DiscoveryError:
                 raise
             except Exception as e:
+                # Includes TimeoutError → "not an MCP endpoint" (e.g. a plain SSE
+                # stream we'd read forever): fall through to the next candidate.
                 logger.debug("MCP discovery failed for %s: %s", candidate, e)
                 continue
             if schema is not None:
