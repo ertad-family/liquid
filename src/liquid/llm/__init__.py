@@ -16,9 +16,10 @@ optional extras (``pip install 'liquid-api[gemini]'`` / ``[anthropic]``).
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -26,6 +27,23 @@ from liquid.models.llm import LLMResponse, Message, Tool
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+
+def _require(module: str, extra: str) -> Any:
+    """Import a provider SDK, or raise an actionable error naming the pip extra.
+
+    LLM provider libraries are optional (you pick one provider; the runtime needs
+    none). When the chosen backend's SDK is missing, fail with a clear install
+    hint instead of a cryptic ``ImportError`` — the same courtesy the database
+    drivers give.
+    """
+    try:
+        return importlib.import_module(module)
+    except ImportError as e:
+        raise ImportError(
+            f"This LLM backend needs the '{module}' package. Install it: pip install 'liquid-api[{extra}]'"
+        ) from e
+
 
 __all__ = [
     "AnthropicBackend",
@@ -82,8 +100,8 @@ class GeminiBackend:
         self.api_key = api_key
 
     async def chat(self, messages: list[Message], tools: list[Tool] | None = None) -> LLMResponse:
-        from google import genai
-        from google.genai import types
+        genai = _require("google.genai", "gemini")
+        types = _require("google.genai.types", "gemini")
 
         client = genai.Client(api_key=self.api_key)
         system = next((m.content for m in messages if m.role == "system"), None)
@@ -108,7 +126,7 @@ class AnthropicBackend:
         self.api_key = api_key
 
     async def chat(self, messages: list[Message], tools: list[Tool] | None = None) -> LLMResponse:
-        import anthropic
+        anthropic = _require("anthropic", "anthropic")
 
         client = anthropic.AsyncAnthropic(api_key=self.api_key)
         system = next((m.content for m in messages if m.role == "system"), None)
@@ -163,7 +181,7 @@ class LiteLLMBackend:
         self.kwargs = kwargs
 
     async def chat(self, messages: list[Message], tools: list[Tool] | None = None) -> LLMResponse:
-        import litellm
+        litellm = _require("litellm", "litellm")
 
         resp = await litellm.acompletion(
             model=self.model,

@@ -152,8 +152,20 @@ Full methodology + per-task breakdown: [`benchmarks/RESULTS.md`](benchmarks/RESU
 ## Install
 
 ```bash
-pip install liquid-api               # core + bundled MCP server (the `liquid-mcp` command)
-pip install 'liquid-api[litellm]'    # any of 100+ LLM providers (or [gemini] / [anthropic])
+pip install liquid-api                 # core + bundled MCP server (the `liquid-mcp` command)
+pip install 'liquid-api[discovery]'    # + an LLM for discovering spec-less REST APIs & field mapping
+```
+
+**Do you need an LLM extra?** Self-describing interfaces — OpenAPI, GraphQL,
+gRPC, MCP, A2A, WSDL — and **all databases** (introspection) discover with **no
+LLM**, and the whole runtime (`fetch`/`query`/`write`/`sense`) never calls a
+model. You only need an LLM backend to **discover a REST API that has no
+machine-readable spec** (heuristic + LLM) and to **map** its fields. `[discovery]`
+pulls LiteLLM, which reaches OpenAI / Gemini / Anthropic / local / 100+ providers;
+or pick one directly:
+
+```bash
+pip install 'liquid-api[gemini]'     # Google Gemini   (or [anthropic]; OpenAI/local work with no extra via base_url)
 pip install 'liquid-api[grpc]'       # gRPC transport (reflection)
 pip install 'liquid-api[ws]'         # WebSocket transport
 pip install 'liquid-api[pg]'         # Postgres / pgvector (asyncpg)

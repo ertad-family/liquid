@@ -2,6 +2,24 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.51.1] - 2026-05-29
+
+### Fixed / Changed — LLM backends fail with an actionable hint; clearer LLM story
+- A missing provider SDK now raises **`pip install 'liquid-api[gemini]'`** (etc.)
+  instead of a cryptic `cannot import name 'genai'` — the same courtesy the
+  database drivers already give. `GeminiBackend` / `AnthropicBackend` /
+  `LiteLLMBackend` route their imports through a shared `_require(module, extra)`.
+- New umbrella extra **`liquid-api[discovery]`** (pulls LiteLLM → OpenAI / Gemini /
+  Anthropic / local / 100+ providers) so the LLM-backed path (discovering
+  spec-less REST APIs + field mapping) installs in one command.
+- README install section reworked to make the LLM story explicit: self-describing
+  interfaces (OpenAPI/GraphQL/gRPC/MCP/WSDL) and **all databases** need no LLM, and
+  the whole runtime is LLM-free; an LLM backend is only needed to discover a REST
+  API with no machine-readable spec and to map its fields. (LLM provider SDKs stay
+  optional by design — you pick one provider; bundling all would bloat/conflict and
+  you still need a key.)
+- PyPI package description updated to the current positioning.
+
 ## [0.51.0] - 2026-05-28
 
 ### Added — `sense` extended to every SQL backend
