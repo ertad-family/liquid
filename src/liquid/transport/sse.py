@@ -92,6 +92,9 @@ class SSEDriver:
                     if deadline is not None and loop.time() >= deadline:
                         return
         except Exception:
+            # Resilient by design (a dropped connection just ends the stream), but
+            # leave a breadcrumb so a *bug* in event shaping isn't fully invisible.
+            logger.debug("SSE sense stream ended on error for %s", url, exc_info=True)
             return
 
 

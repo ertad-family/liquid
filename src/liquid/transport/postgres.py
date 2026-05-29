@@ -207,6 +207,7 @@ class PostgresDriver:
                 if ctx.max_events is not None and emitted >= ctx.max_events:
                     return
         except Exception:
+            logger.debug("Postgres LISTEN/NOTIFY sense stream ended on error (channel=%s)", channel, exc_info=True)
             return
         finally:
             with contextlib.suppress(Exception):

@@ -144,6 +144,7 @@ class RedisDriver:
                 if deadline is not None and loop.time() >= deadline:
                     return
         except Exception:
+            logger.debug("Redis pub/sub sense stream ended on error", exc_info=True)
             return
         finally:
             with contextlib.suppress(Exception):

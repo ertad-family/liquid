@@ -2,6 +2,20 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.59.2] - 2026-05-29
+
+### Changed — sense streams leave a debug breadcrumb when they end on error
+Hardening follow-up to the 0.59.1 SSE bugs (which were invisible partly because a
+broad `except` swallowed them with no log). Every `sense()` loop is still
+resilient by design — a dropped connection just ends the stream — but it now logs
+the cause at `DEBUG` with a traceback (`exc_info=True`) so a *bug* mid-stream
+isn't fully silent. Applied across all sense drivers: the shared SQL delta-poll
+loop (`_sql.py`, covers Postgres/MySQL/SQLite/DuckDB/MSSQL), Postgres
+LISTEN/NOTIFY, Redis pub/sub, HTTP SSE/NDJSON, and MCP notifications. Audit
+confirmed event-shaping (`SenseEvent` construction) sits *outside* the
+connection-error guard in the shared loop, so a shaping bug propagates rather
+than being swallowed. No behavior change beyond the added logging.
+
 ## [0.59.1] - 2026-05-29
 
 ### Fixed — SSE discovery actually works now
