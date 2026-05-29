@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.51.1"
+version = "0.51.2"
 description = "Connect your AI agent to anything — APIs, databases, and agents; read, write, and sense."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -24,6 +24,9 @@ dependencies = [
     # feature, so `mcp` is a core dep — `liquid-mcp` works after a plain install
     # and `uv sync` (no extra needed). Avoids a ModuleNotFoundError footgun.
     "mcp>=1.0",
+    # FileVault encrypts credentials at rest (Fernet). A security primitive for the
+    # default credential store is core, not optional — unlike provider SDKs.
+    "cryptography>=42",
 ]
 
 [project.scripts]

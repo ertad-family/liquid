@@ -2,6 +2,23 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.51.2] - 2026-05-29
+
+### Security — FileVault encrypts credentials at rest
+`FileVault` no longer stores secrets in plaintext. Values are encrypted with
+**Fernet** (AES-128-CBC + HMAC); on disk `vault.json` is an envelope
+`{"liquid_vault": 2, "fernet": "<token>"}`.
+- **Key source:** `LIQUID_VAULT_KEY` (a Fernet key — best practice: inject from a
+  secret manager so no key ever touches disk). If unset, a key is generated once
+  into a **separate** `vault.key` (0600) next to the vault — so a leaked/copied/
+  committed `vault.json` alone reveals nothing without the key.
+- **Auto-migration:** an existing legacy plaintext vault is read transparently and
+  re-written encrypted on first use — no manual step.
+- Wrong/missing key fails loudly (`VaultError`) instead of silently.
+- `cryptography` is now a **core dependency** (a security primitive for the default
+  credential store, unlike the optional provider SDKs); imported lazily, so
+  `import liquid` doesn't pull it until a `FileVault` is built.
+
 ## [0.51.1] - 2026-05-29
 
 ### Fixed / Changed — LLM backends fail with an actionable hint; clearer LLM story
