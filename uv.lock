@@ -1057,7 +1057,7 @@ wheels = [
 
 [[package]]
 name = "liquid-api"
-version = "0.51.0"
+version = "0.51.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -1078,6 +1078,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+]
+discovery = [
+    { name = "litellm" },
 ]
 duckdb = [
     { name = "duckdb" },
@@ -1126,6 +1129,7 @@ requires-dist = [
     { name = "grpcio", marker = "extra == 'grpc'", specifier = ">=1.60" },
     { name = "grpcio-reflection", marker = "extra == 'grpc'", specifier = ">=1.60" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "litellm", marker = "extra == 'discovery'", specifier = ">=1.0" },
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.0" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.0" },
@@ -1141,7 +1145,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11" },
     { name = "websockets", marker = "extra == 'ws'", specifier = ">=12.0" },
 ]
-provides-extras = ["browser", "mcp", "gemini", "anthropic", "litellm", "grpc", "ws", "pg", "mysql", "neo4j", "duckdb", "mssql", "mongodb", "redis", "dev"]
+provides-extras = ["browser", "mcp", "gemini", "anthropic", "litellm", "discovery", "grpc", "ws", "pg", "mysql", "neo4j", "duckdb", "mssql", "mongodb", "redis", "dev"]
 
 [[package]]
 name = "litellm"
