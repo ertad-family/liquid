@@ -2,6 +2,23 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.54.0] - 2026-05-29
+
+### Added — cloud catalog tier (`HttpCatalogRegistry`)
+The third resolution tier is now live: a read-only `AdapterRegistry` backed by an
+HTTP adapter catalog, completing **local registry → bundled adapters → cloud
+catalog → discovery**.
+- `HttpCatalogRegistry(base_url=...)` consults a hosted catalog over HTTP and plugs
+  straight into `Liquid(catalog=...)`. An exact url+model hit returns a ready,
+  **zero-LLM** adapter; a service match returns templates the resolver re-maps.
+- Resilient by design — any 404, network error, or malformed payload simply means
+  "not in the catalog", so the request falls through to the next tier instead of
+  failing. Supports a shared `httpx.AsyncClient` and custom auth headers.
+- **Contract** (read-only, no discovery/LLM/credits): `GET /v1/catalog/adapter?url=&model_hash=`
+  → `{"config": <AdapterConfig>}` or 404; `GET /v1/catalog/adapter/by_service?name=`
+  → `{"configs": [...]}`. Implemented cloud-side in liquid-cloud (delivery endpoint
+  + an ingest script that publishes the OSS bundled adapters into the catalog).
+
 ## [0.53.0] - 2026-05-29
 
 ### Added — tiered adapter resolution (unify the lookup across sources)
