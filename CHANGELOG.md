@@ -2,6 +2,30 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.57.0] - 2026-05-29
+
+### Added — MCP notifications as sense
+`MCPDriver.sense()` perceives **server-initiated MCP notifications** as a live
+stream: it opens a session with a `message_handler` that enqueues each incoming
+notification — resource updates, list-changed signals, progress, log messages —
+and yields it as a `modality="message"` event carrying `{"method", "params"}`.
+`transport_meta["uri"]` subscribes to a resource first (so
+`notifications/resources/updated` flows); `transport_meta["logging_level"]`
+raises the server log level. Bounded by `max_events` / `max_seconds`. MCP now
+reports `supports_sense`.
+
+### Added — webhooks as sense (inbound listener)
+The afferent organ now points *inward*: `liquid.webhooks.WebhookListener` (and
+`Liquid.sense_webhook(...)`) host a small inbound HTTP endpoint, verify each
+delivery with a `WebhookVerifier` (Stripe/GitHub/Shopify/Slack/generic-HMAC) and
+optionally de-duplicate via an `IdempotencyStore`, then stream verified events —
+so a service (or a human via a webhook) POSTing to the agent becomes a
+perceivable signal alongside DB deltas and pub/sub. Bad signatures answer `401`
+and are dropped; duplicates answer `200` and are dropped; verified deliveries
+answer `200` and are yielded as `modality="message"` events (payload = the
+webhook JSON, cursor = event id). Pure-`asyncio` server (minimal HTTP/1.1 parse),
+**no new dependency**. Bounded by `max_events` / `max_seconds`.
+
 ## [0.56.0] - 2026-05-29
 
 ### Added — Postgres LISTEN/NOTIFY (native DB push)

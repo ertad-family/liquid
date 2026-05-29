@@ -301,7 +301,7 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | gRPC | ✅ unary + server-streaming (reflection) | — | `liquid-api[grpc]` |
 | WebSocket | ✅ bounded batch reads + subscribe + live `sense` | — | `liquid-api[ws]` |
 | SSE / NDJSON (HTTP server-push) | ✅ bounded batch reads + live `sense` | — | — |
-| MCP (agent) | ✅ call tools / read resources | ✅ tool calls | — |
+| MCP (agent) | ✅ call tools / read resources + notification `sense` | ✅ tool calls | — |
 | A2A (agent) | ✅ JSON-RPC `message/send` to AgentCard skills | — | — |
 | Postgres (+pgvector) | ✅ tables/views, filters, pagination, vector search | ✅ | `liquid-api[pg]` |
 | MySQL / MariaDB | ✅ tables/views, filters, pagination | ✅ | `liquid-api[mysql]` |
@@ -318,6 +318,14 @@ insert/update/delete, Redis `SET`/`HSET`/`DEL`, Neo4j node CRUD); web/agent
 writes go through verified actions. Identifiers come from introspection and
 values are parameterized; `update`/`delete` require a `where` (no blanket
 mutations); writes are **off until you opt in** with `allow_write=True`.
+
+**Sense — the afferent organ.** `liquid.sense(adapter, endpoint)` perceives a live
+event stream wherever one exists: SQL row deltas (and Postgres `LISTEN/NOTIFY`),
+Redis pub/sub, WebSocket frames, HTTP server-push (SSE/NDJSON), and MCP
+notifications — each yielded as a modality-agnostic event. Pointed *inward*,
+`liquid.sense_webhook(port=…, verifier=…)` hosts an inbound endpoint so a service
+(or a human, via a webhook) POSTing to the agent becomes a perceivable signal
+too. All bounded by `max_events` / `max_seconds`, so an agent can drain-by-pull.
 
 **Discovery is automatic — and identifies on the fly.** Before the pipeline runs,
 a fingerprint step names the target: a bare `host:port` is normalized by

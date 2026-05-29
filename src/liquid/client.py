@@ -958,7 +958,7 @@ class Liquid:
             raise LiquidError(
                 f"The {target_ep.protocol!r} interface can't be sensed — no live event stream.",
                 recovery=Recovery(
-                    hint="sense() works on event/stream-capable endpoints (SQL tables, Redis, WebSocket, SSE/NDJSON).",
+                    hint="sense() works on event/stream endpoints (SQL, Redis, WebSocket, SSE/NDJSON, MCP).",
                     retry_safe=False,
                 ),
             )
@@ -985,6 +985,61 @@ class Liquid:
                 )
                 async for event in stream:
                     yield event
+
+        return _iter()
+
+    async def sense_webhook(
+        self,
+        *,
+        port: int,
+        host: str = "127.0.0.1",
+        path: str = "/webhook",
+        verifier: Any | None = None,
+        idempotency_store: Any | None = None,
+        max_events: int | None = None,
+        max_seconds: float | None = None,
+    ) -> Any:
+        """Perceive inbound webhooks as a sense — the afferent organ, pointed inward.
+
+        Most senses connect *out*; a webhook is the inverse — the world POSTs *to*
+        the agent. This hosts a small inbound HTTP endpoint, verifies each delivery
+        with ``verifier`` (a :class:`~liquid.webhooks.WebhookVerifier`; strongly
+        recommended) and optionally de-duplicates via ``idempotency_store``, then
+        yields each verified delivery as a ``modality="message"``
+        :class:`~liquid.transport.SenseEvent` whose ``payload`` is the webhook's
+        JSON and whose ``cursor`` is the event id. Bounded by ``max_events`` /
+        ``max_seconds``; the server is torn down when the iterator finishes.
+
+        ```python
+        from liquid.webhooks import StripeWebhookVerifier, InMemoryIdempotencyStore
+        events = await liquid.sense_webhook(
+            port=8088, path="/stripe",
+            verifier=StripeWebhookVerifier(secret="whsec_..."),
+            idempotency_store=InMemoryIdempotencyStore(),
+        )
+        async for event in events:
+            print(event.payload["type"])
+        ```
+        """
+        from liquid.transport import SenseEvent
+        from liquid.webhooks.listener import WebhookListener
+
+        listener = WebhookListener(
+            host=host,
+            port=port,
+            path=path,
+            verifier=verifier,
+            idempotency_store=idempotency_store,
+        )
+
+        async def _iter() -> Any:
+            async for event in listener.events(max_events=max_events, max_seconds=max_seconds):
+                yield SenseEvent(
+                    source=path,
+                    modality="message",
+                    payload=event.payload,
+                    cursor=event.event_id,
+                )
 
         return _iter()
 
