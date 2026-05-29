@@ -1057,9 +1057,10 @@ wheels = [
 
 [[package]]
 name = "liquid-api"
-version = "0.51.1"
+version = "0.51.2"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "pydantic" },
@@ -1124,6 +1125,7 @@ requires-dist = [
     { name = "aioodbc", marker = "extra == 'mssql'", specifier = ">=0.4" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40" },
     { name = "asyncpg", marker = "extra == 'pg'", specifier = ">=0.29" },
+    { name = "cryptography", specifier = ">=42" },
     { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=0.10" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=0.3" },
     { name = "grpcio", marker = "extra == 'grpc'", specifier = ">=1.60" },
