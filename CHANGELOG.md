@@ -2,6 +2,35 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.59.1] - 2026-05-29
+
+### Fixed — SSE discovery actually works now
+`SSEDiscovery` (added in 0.55.0) never produced an adapter: two bugs, both
+surfaced by exercising the live `discover()` → `liquid_sense` path end-to-end.
+
+- **`discovery_method="sse"` was not an allowed value** on `APISchema`, so every
+  successful SSE/NDJSON discovery raised a `ValidationError` that the strategy
+  swallowed and returned `None` — the stream silently fell through to REST. Added
+  `"sse"` to the literal. (Driver-level tests passed because they build the
+  `Endpoint` directly and never went through `APISchema`; added discovery tests
+  that exercise the full `discover()` path.)
+- **An idle stream hung until the HTTP read timeout.** Sampling only checked its
+  deadline *after* an event, so a confirmed `text/event-stream` that was quiet in
+  the window blocked, then errored to `None`. Sampling is now bounded by a hard
+  timeout and a content-type-confirmed stream is claimed even with zero sampled
+  events (an empty record shape is fine).
+
+- **MCP discovery hung on a non-MCP stream.** `MCPDiscovery` tries the URL as
+  given first; against a long-lived SSE/stream endpoint the MCP client read the
+  stream forever waiting for an `initialize` response that never came — hanging
+  the whole pipeline before `SSEDiscovery` got a turn. The MCP handshake is now
+  bounded by an `asyncio.timeout`; a timeout means "not MCP" and the pipeline
+  moves on. (A 403-gated stream like Wikimedia masked this; an open one exposed
+  it — a generic SSE URL would hang discovery indefinitely.)
+
+Verified live end-to-end: `discover` → `liquid.sense` perceives real events from
+both Wikimedia EventStreams and a local SSE server.
+
 ## [0.59.0] - 2026-05-29
 
 ### Added — connectors: a human as a node (`TelegramConnector`)
