@@ -35,6 +35,7 @@ from liquid.transport.postgres import PostgresDriver
 from liquid.transport.redis_driver import RedisDriver
 from liquid.transport.soap import SOAPDriver
 from liquid.transport.sqlite import SQLiteDriver
+from liquid.transport.sse import SSEDriver
 from liquid.transport.websocket import WSDriver
 
 register_driver(HTTPDriver())
@@ -42,6 +43,7 @@ register_driver(GraphQLDriver())
 register_driver(SOAPDriver())
 register_driver(GRPCDriver())
 register_driver(WSDriver())
+register_driver(SSEDriver())
 register_driver(MCPDriver())
 register_driver(A2ADriver())
 register_driver(PostgresDriver())
@@ -71,6 +73,7 @@ __all__ = [
     "RedisDriver",
     "SOAPDriver",
     "SQLiteDriver",
+    "SSEDriver",
     "SenseContext",
     "SenseDriver",
     "SenseEvent",

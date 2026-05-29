@@ -7,6 +7,12 @@ whichever comes first. JSON frames become records (objects, or each element of a
 JSON array); non-JSON frames are wrapped as ``{"message": ...}``. Each fetch
 opens a fresh connection and reads a fresh batch (no cursor).
 
+The same wire is also a natural *sense*: ``sense()`` keeps the connection open
+and yields each inbound frame as a ``modality="message"`` :class:`SenseEvent` as
+the server pushes it — true push perception, the afferent counterpart to fetch's
+one-shot batch. This is what makes a WebSocket an agent's live sense rather than
+a poll target.
+
 ``websockets`` is an optional dependency (the ``ws`` extra); its import is
 function-local so the core package doesn't require it.
 """
@@ -16,9 +22,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, SenseContext, SenseEvent
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +77,75 @@ class WSDriver:
             return DriverResponse(status_code=503, error_body=f"WebSocket error: {e}"[:500])
 
         return DriverResponse(status_code=200, records=records[:max_records])
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Perceive inbound frames as a live push stream.
+
+        Connects (optionally sending a subscribe message), then yields every
+        frame the server pushes as a ``modality="message"`` event until
+        ``max_events`` / ``max_seconds`` is hit or the socket closes. Each frame
+        is shaped like ``fetch``'s records (JSON object/array elements, else
+        ``{"message": ...}``). No cursor — a WebSocket has no replayable offset;
+        events are live-only. Errors end the stream quietly, as elsewhere.
+        """
+        try:
+            from websockets.asyncio.client import connect
+            from websockets.exceptions import ConnectionClosed, WebSocketException
+        except ImportError:
+            return
+
+        meta = ctx.endpoint.transport_meta or {}
+        url = meta.get("url") or ctx.base_url
+        params = ctx.params or {}
+        subscribe = params.get("subscribe", meta.get("subscribe"))
+        headers = await _ws_headers(ctx)
+
+        emitted = 0
+        loop = asyncio.get_event_loop()
+        deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
+        try:
+            async with connect(url, additional_headers=headers) as ws:
+                if subscribe is not None:
+                    await ws.send(subscribe if isinstance(subscribe, str) else json.dumps(subscribe))
+                while True:
+                    if deadline is not None:
+                        remaining = deadline - loop.time()
+                        if remaining <= 0:
+                            return
+                    else:
+                        remaining = None
+                    try:
+                        frame = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    except (TimeoutError, ConnectionClosed):
+                        return
+                    for payload in _frame_payloads(frame):
+                        yield SenseEvent(source=ctx.endpoint.path, modality="message", payload=payload)
+                        emitted += 1
+                        if ctx.max_events is not None and emitted >= ctx.max_events:
+                            return
+        except (WebSocketException, OSError):
+            return
+
+
+async def _ws_headers(ctx: SenseContext) -> dict[str, str] | None:
+    """Build outbound headers from any bearer credential the vault holds.
+
+    The fetch path receives headers pre-built by the Fetcher; the sense path
+    constructs the SenseContext directly, so resolve a bearer here best-effort
+    (public sockets have no credential stored — connect unauthenticated).
+    """
+    try:
+        token = await ctx.vault.get(ctx.auth_ref)
+    except Exception:
+        return None
+    return {"Authorization": f"Bearer {token}"} if token else None
+
+
+def _frame_payloads(frame: Any) -> list[dict]:
+    """Shape one inbound frame into zero or more event payloads (mirrors fetch)."""
+    records: list[dict] = []
+    _append_frame(records, frame)
+    return records
 
 
 def _append_frame(records: list[dict], frame: Any) -> None:

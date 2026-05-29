@@ -302,7 +302,7 @@ class Fetcher:
             raise SyncRuntimeError(
                 f"The {endpoint.protocol!r} driver can't perceive — sense() is not supported here.",
                 recovery=Recovery(
-                    hint="sense() is supported for event/stream-capable endpoints (e.g. SQLite, Redis).",
+                    hint="sense() needs an event/stream endpoint (SQL tables, Redis, WebSocket, SSE/NDJSON).",
                     retry_safe=False,
                 ),
             )

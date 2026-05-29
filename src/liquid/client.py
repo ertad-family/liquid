@@ -28,6 +28,7 @@ from liquid.discovery.postgres import PostgresDiscovery
 from liquid.discovery.redis import RedisDiscovery
 from liquid.discovery.rest_heuristic import RESTHeuristicDiscovery
 from liquid.discovery.sqlite import SQLiteDiscovery
+from liquid.discovery.sse import SSEDiscovery
 from liquid.discovery.websocket import WSDiscovery
 from liquid.discovery.wsdl import WSDLDiscovery
 from liquid.exceptions import ActionNotVerifiedError, LiquidError, Recovery
@@ -373,6 +374,9 @@ class Liquid:
                     MCPDiscovery(),
                     A2ADiscovery(http_client=client),
                     PluginManifestDiscovery(http_client=client),
+                    # Content-type gated: only claims the URL if it actually streams
+                    # (text/event-stream or NDJSON); ordinary JSON falls through to REST.
+                    SSEDiscovery(http_client=client),
                     OpenAPIDiscovery(http_client=client),
                     GraphQLDiscovery(http_client=client),
                     WSDLDiscovery(http_client=client),
@@ -954,7 +958,7 @@ class Liquid:
             raise LiquidError(
                 f"The {target_ep.protocol!r} interface can't be sensed — no live event stream.",
                 recovery=Recovery(
-                    hint="sense() works on event/stream-capable endpoints (e.g. SQLite, Redis).",
+                    hint="sense() works on event/stream-capable endpoints (SQL tables, Redis, WebSocket, SSE/NDJSON).",
                     retry_safe=False,
                 ),
             )

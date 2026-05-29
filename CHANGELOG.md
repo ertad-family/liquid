@@ -2,6 +2,32 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.55.0] - 2026-05-29
+
+### Added — streaming senses (server-push as perception)
+`sense()` — the agent's afferent organ — now perceives **push streams**, not just
+DB deltas and pub/sub. Two streaming wire protocols join the sense surface:
+
+- **WebSocket sense** — `WSDriver.sense()` keeps the socket open and yields each
+  inbound frame as a live `modality="message"` event (true push, the afferent
+  counterpart to its existing bounded-batch `fetch`). Honors an optional
+  `subscribe` message, `max_events`/`max_seconds` bounds, and exits quietly on
+  close. (`ws` extra.)
+- **HTTP server-push sense (SSE / NDJSON)** — new `SSEDriver` (protocol `sse`,
+  **core, no extra dep**) reads Server-Sent Events and NDJSON streams: `fetch`
+  collects a bounded batch, `sense` perceives events live. SSE events carry the
+  last-event-id as a resumable `cursor` (sent back as `Last-Event-ID` on
+  reconnect) with `modality="message"`; NDJSON records are `modality="data"`.
+  Framing auto-detects from `Content-Type` (`transport_meta["framing"]`
+  overrides). Reuses the existing `liquid.streaming` parsers.
+- **`SSEDiscovery`** — content-type gated: pointing `discover()` at a streaming
+  URL claims it as a `protocol="sse"` endpoint only when the response is
+  `text/event-stream` or NDJSON; ordinary JSON falls through to REST/OpenAPI.
+
+This unifies all push-capable transports under one modality-agnostic sense organ,
+reachable through `liquid.sense(...)` and the MCP `liquid_sense` tool. Plain
+request/response HTTP stays non-sense — a stream endpoint is its own `sse` protocol.
+
 ## [0.54.0] - 2026-05-29
 
 ### Added — cloud catalog tier (`HttpCatalogRegistry`)

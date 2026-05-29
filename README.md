@@ -20,7 +20,7 @@ agent might need to touch — Liquid figures out *how to talk to it* so the agen
 doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 `sense` perceives a live event stream, `write` acts on the world.
 
-- **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket
+- **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket, SSE/NDJSON streams
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
 - **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
   Neo4j (graph), MongoDB (documents), Redis (key-value)
@@ -299,7 +299,8 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | GraphQL | ✅ query + Relay pagination | ✅ mutations | — |
 | SOAP / WSDL | ✅ stdlib XML | — | — |
 | gRPC | ✅ unary + server-streaming (reflection) | — | `liquid-api[grpc]` |
-| WebSocket | ✅ bounded batch reads + subscribe | — | `liquid-api[ws]` |
+| WebSocket | ✅ bounded batch reads + subscribe + live `sense` | — | `liquid-api[ws]` |
+| SSE / NDJSON (HTTP server-push) | ✅ bounded batch reads + live `sense` | — | — |
 | MCP (agent) | ✅ call tools / read resources | ✅ tool calls | — |
 | A2A (agent) | ✅ JSON-RPC `message/send` to AgentCard skills | — | — |
 | Postgres (+pgvector) | ✅ tables/views, filters, pagination, vector search | ✅ | `liquid-api[pg]` |
@@ -328,7 +329,7 @@ new authenticated binary protocol isn't — so unknowns are named, not guessed a
 | Discovery | Where it looks | Cost |
 |---|---|---|
 | Databases | catalog introspection (`postgres://`, `mysql://`, `mongodb://`, `redis://`, `neo4j://`, …) | Low |
-| gRPC / WebSocket | server reflection / frame sampling | Low |
+| gRPC / WebSocket / SSE | server reflection / frame sampling / content-type sniff | Low |
 | MCP / A2A / Plugin | `/mcp`, `/.well-known/agent-card.json`, `/.well-known/ai-plugin.json` | Low |
 | OpenAPI / GraphQL / SOAP | spec, introspection, or WSDL | Low |
 | REST heuristic | common paths + LLM interpretation | Medium |
