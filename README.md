@@ -20,10 +20,12 @@ agent might need to touch — Liquid figures out *how to talk to it* so the agen
 doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 `sense` perceives a live event stream, `write` acts on the world.
 
-- **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket
+- **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket, SSE/NDJSON streams
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
 - **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
   Neo4j (graph), MongoDB (documents), Redis (key-value)
+- **People** — a human as a node via `connectors` (Telegram today): perceive their
+  messages with `sense`, answer them with `send`
 
 Point it at a `https://…` endpoint, a `postgres://…` / `mongodb://…` / `redis://…`
 DSN, a `grpc://…` target, or another MCP server — discovery identifies the
@@ -308,8 +310,9 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | GraphQL | ✅ query + Relay pagination | ✅ mutations | — |
 | SOAP / WSDL | ✅ stdlib XML | — | — |
 | gRPC | ✅ unary + server-streaming (reflection) | — | `liquid-api[grpc]` |
-| WebSocket | ✅ bounded batch reads + subscribe | — | `liquid-api[ws]` |
-| MCP (agent) | ✅ call tools / read resources | ✅ tool calls | — |
+| WebSocket | ✅ bounded batch reads + subscribe + live `sense` | — | `liquid-api[ws]` |
+| SSE / NDJSON (HTTP server-push) | ✅ bounded batch reads + live `sense` | — | — |
+| MCP (agent) | ✅ call tools / read resources + notification `sense` | ✅ tool calls | — |
 | A2A (agent) | ✅ JSON-RPC `message/send` to AgentCard skills | — | — |
 | Postgres (+pgvector) | ✅ tables/views, filters, pagination, vector search | ✅ | `liquid-api[pg]` |
 | MySQL / MariaDB | ✅ tables/views, filters, pagination | ✅ | `liquid-api[mysql]` |
@@ -327,6 +330,27 @@ writes go through verified actions. Identifiers come from introspection and
 values are parameterized; `update`/`delete` require a `where` (no blanket
 mutations); writes are **off until you opt in** with `allow_write=True`.
 
+**Sense — the afferent organ.** `liquid.sense(adapter, endpoint)` perceives a live
+event stream wherever one exists: SQL row deltas (and Postgres `LISTEN/NOTIFY`),
+Redis pub/sub, WebSocket frames, HTTP server-push (SSE/NDJSON), and MCP
+notifications — each yielded as a modality-agnostic event. Pointed *inward*,
+`liquid.sense_webhook(port=…, verifier=…)` hosts an inbound endpoint so a service
+(or a human, via a webhook) POSTing to the agent becomes a perceivable signal
+too. All bounded by `max_events` / `max_seconds`, so an agent can drain-by-pull.
+
+**The sensorimotor loop.** `react(stream, handler)` drives a handler for each
+perceived event — with error isolation and bounded concurrency — so a host can
+*perceive → wake the agent → act*. `merge_senses(*streams)` fans several senses
+into one loop, so one agent can watch a database, a queue, and a webhook at once:
+
+```python
+events = merge_senses(
+    await liquid.sense(orders, "/orders"),
+    await liquid.sense_webhook(port=8088, verifier=stripe_verifier),
+)
+await react(events, on_event, max_concurrency=4)
+```
+
 **Discovery is automatic — and identifies on the fly.** Before the pipeline runs,
 a fingerprint step names the target: a bare `host:port` is normalized by
 well-known port (`db:5432` → `postgresql://db:5432`), and `liquid.identify(url)`
@@ -337,7 +361,7 @@ new authenticated binary protocol isn't — so unknowns are named, not guessed a
 | Discovery | Where it looks | Cost |
 |---|---|---|
 | Databases | catalog introspection (`postgres://`, `mysql://`, `mongodb://`, `redis://`, `neo4j://`, …) | Low |
-| gRPC / WebSocket | server reflection / frame sampling | Low |
+| gRPC / WebSocket / SSE | server reflection / frame sampling / content-type sniff | Low |
 | MCP / A2A / Plugin | `/mcp`, `/.well-known/agent-card.json`, `/.well-known/ai-plugin.json` | Low |
 | OpenAPI / GraphQL / SOAP | spec, introspection, or WSDL | Low |
 | REST heuristic | common paths + LLM interpretation | Medium |

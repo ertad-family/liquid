@@ -31,6 +31,7 @@ from liquid.auth.schemes import (
 from liquid.cache import InMemoryCache
 from liquid.catalog import HttpCatalogRegistry
 from liquid.client import Liquid
+from liquid.connectors import TelegramConnector
 from liquid.diff_sync import FetchChangesResult
 from liquid.estimate import FetchEstimate, estimate_fetch
 from liquid.evolution import EvolutionKind, EvolutionSignal, extract_signals
@@ -119,6 +120,7 @@ from liquid.query import (
     validate_query,
 )
 from liquid.query.nl import NLCompilationCache, NLCompileError
+from liquid.sense_loop import merge_senses, react
 from liquid.streaming import SSEEvent, parse_ndjson, parse_sse
 from liquid.sync.known_limits import infer_limits, lookup_known_limits
 from liquid.sync.quota import QuotaInfo
@@ -240,6 +242,7 @@ __all__ = [
     "SyncResult",
     "SyncRuntimeError",
     "Tag",
+    "TelegramConnector",
     "ToolCall",
     "UserRef",
     "Vault",
@@ -271,6 +274,7 @@ __all__ = [
     "llm_from_env",
     "load_bundled_adapter",
     "lookup_known_limits",
+    "merge_senses",
     "normalize_datetime",
     "normalize_email",
     "normalize_file_attachment",
@@ -286,6 +290,7 @@ __all__ = [
     "normalize_user_ref",
     "parse_ndjson",
     "parse_sse",
+    "react",
     "register_sql_manifest",
     "search_async",
     "search_nl",

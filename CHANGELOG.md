@@ -2,6 +2,118 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.59.0] - 2026-05-29
+
+### Added — connectors: a human as a node (`TelegramConnector`)
+The senses and hands, pointed at *people*. `liquid.connectors.TelegramConnector`
+lets an agent perceive a human and act back over the Telegram Bot API:
+
+- **`sense(...)`** — long-polls `getUpdates` (server-held, push-like, not
+  busy-polling) and yields each incoming message as a `modality="message"`
+  `SenseEvent` with the `update_id` as a resumable cursor (acked as `offset` on
+  the next poll). Flattened payload surfaces `chat_id` / `text` / `from` with the
+  raw message kept under `message`. Composes with `react` / `merge_senses` like
+  any other sense. Bounded by `max_events` / `max_seconds`.
+- **`send(chat_id, text, **kwargs)`** — the hands: `sendMessage` back to a chat.
+- **`me()`** — `getMe`, to verify the token.
+
+httpx-only (a core dep); the bot token is supplied by the caller (pull from a
+vault/env — never persisted). New `liquid.connectors` package — the home for
+future human-facing connectors (Slack, voice).
+
+```python
+tg = TelegramConnector(bot_token)
+async def echo(e):
+    await tg.send(e.payload["chat_id"], f"echo: {e.payload['text']}")
+await react(tg.sense(), echo)        # perceive a person → answer them
+```
+
+## [0.58.0] - 2026-05-29
+
+### Added — the sensorimotor loop (`react` + `merge_senses`)
+Host-side glue that turns perception into action — the afferent→efferent arc the
+library is built around. An LLM agent only acts when invoked, so a long-running
+host runs the loop: perceive an event, wake the agent, let it act (`write` /
+`execute`). Two pure-`asyncio` primitives (no new dependency), exported top-level:
+
+- **`react(stream, handler, *, max_concurrency=1, on_error=None)`** — consume a
+  sense stream and dispatch each event to an async `handler`, with **error
+  isolation** (one failing event never kills the loop; `on_error` or a log) and
+  **bounded concurrency** (back-pressure on the stream when handlers fall
+  behind). Returns the count dispatched.
+- **`merge_senses(*streams)`** — fan several sense streams into one, yielding
+  events in arrival order, so a single loop can watch a DB table *and* a Redis
+  channel *and* an inbound webhook at once. A failing source is dropped, not
+  fatal; pump tasks are cancelled on exit.
+
+```python
+events = merge_senses(
+    await liquid.sense(orders, "/orders"),          # SQL / LISTEN-NOTIFY
+    await liquid.sense_webhook(port=8088, verifier=v),  # inbound webhook
+)
+await react(events, handle, max_concurrency=4)      # perceive → act
+```
+
+## [0.57.0] - 2026-05-29
+
+### Added — MCP notifications as sense
+`MCPDriver.sense()` perceives **server-initiated MCP notifications** as a live
+stream: it opens a session with a `message_handler` that enqueues each incoming
+notification — resource updates, list-changed signals, progress, log messages —
+and yields it as a `modality="message"` event carrying `{"method", "params"}`.
+`transport_meta["uri"]` subscribes to a resource first (so
+`notifications/resources/updated` flows); `transport_meta["logging_level"]`
+raises the server log level. Bounded by `max_events` / `max_seconds`. MCP now
+reports `supports_sense`.
+
+### Added — webhooks as sense (inbound listener)
+The afferent organ now points *inward*: `liquid.webhooks.WebhookListener` (and
+`Liquid.sense_webhook(...)`) host a small inbound HTTP endpoint, verify each
+delivery with a `WebhookVerifier` (Stripe/GitHub/Shopify/Slack/generic-HMAC) and
+optionally de-duplicate via an `IdempotencyStore`, then stream verified events —
+so a service (or a human via a webhook) POSTing to the agent becomes a
+perceivable signal alongside DB deltas and pub/sub. Bad signatures answer `401`
+and are dropped; duplicates answer `200` and are dropped; verified deliveries
+answer `200` and are yielded as `modality="message"` events (payload = the
+webhook JSON, cursor = event id). Pure-`asyncio` server (minimal HTTP/1.1 parse),
+**no new dependency**. Bounded by `max_events` / `max_seconds`.
+
+## [0.56.0] - 2026-05-29
+
+### Added — Postgres LISTEN/NOTIFY (native DB push)
+`PostgresDriver.sense()` gains a **true-push** mode alongside its delta-poll:
+when a channel is configured (`params["channel"]` or
+`transport_meta["notify_channel"]`), the driver `LISTEN`s and yields each
+`NOTIFY` payload as it fires — no polling. JSON payloads surface as objects,
+others as a raw string; events are `modality="message"` carrying
+`{"channel", "value"}`. Without a channel it falls back to the shared SQL
+delta-poll loop (new rows since a watch cursor), so existing adapters are
+unchanged. Bounded by `max_events` / `max_seconds`.
+
+### Added — streaming senses (server-push as perception)
+`sense()` — the agent's afferent organ — now perceives **push streams**, not just
+DB deltas and pub/sub. Two streaming wire protocols join the sense surface:
+
+- **WebSocket sense** — `WSDriver.sense()` keeps the socket open and yields each
+  inbound frame as a live `modality="message"` event (true push, the afferent
+  counterpart to its existing bounded-batch `fetch`). Honors an optional
+  `subscribe` message, `max_events`/`max_seconds` bounds, and exits quietly on
+  close. (`ws` extra.)
+- **HTTP server-push sense (SSE / NDJSON)** — new `SSEDriver` (protocol `sse`,
+  **core, no extra dep**) reads Server-Sent Events and NDJSON streams: `fetch`
+  collects a bounded batch, `sense` perceives events live. SSE events carry the
+  last-event-id as a resumable `cursor` (sent back as `Last-Event-ID` on
+  reconnect) with `modality="message"`; NDJSON records are `modality="data"`.
+  Framing auto-detects from `Content-Type` (`transport_meta["framing"]`
+  overrides). Reuses the existing `liquid.streaming` parsers.
+- **`SSEDiscovery`** — content-type gated: pointing `discover()` at a streaming
+  URL claims it as a `protocol="sse"` endpoint only when the response is
+  `text/event-stream` or NDJSON; ordinary JSON falls through to REST/OpenAPI.
+
+This unifies all push-capable transports under one modality-agnostic sense organ,
+reachable through `liquid.sense(...)` and the MCP `liquid_sense` tool. Plain
+request/response HTTP stays non-sense — a stream endpoint is its own `sse` protocol.
+
 ## [0.54.0] - 2026-05-29
 
 ### Added — cloud catalog tier (`HttpCatalogRegistry`)

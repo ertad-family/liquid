@@ -17,9 +17,14 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, SenseEvent
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from liquid.transport.base import SenseContext
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +59,96 @@ class MCPDriver:
                 return await _call_tool(session, meta, ctx.params)
         except Exception as e:  # mcp errors don't share a single base; normalize the lot
             return DriverResponse(status_code=503, error_body=f"MCP error: {e}"[:500])
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Perceive server-initiated MCP notifications as a live event stream.
+
+        An MCP server can push notifications to a connected client — resource
+        updates, list-changed signals, progress, log messages. This opens a
+        session with a ``message_handler`` that enqueues each incoming
+        notification and yields it as a ``modality="message"`` event carrying
+        ``{"method", "params"}``. With ``transport_meta["uri"]`` it subscribes to
+        that resource first (so ``notifications/resources/updated`` flows); with
+        ``transport_meta["logging_level"]`` it raises the server log level.
+        Bounded by ``max_events`` / ``max_seconds``; errors end the stream quietly.
+        """
+        import asyncio
+        import contextlib
+
+        try:
+            from mcp import ClientSession
+            from mcp.client.streamable_http import streamablehttp_client
+        except ImportError:
+            return
+
+        meta = ctx.endpoint.transport_meta or {}
+        mcp_url = meta.get("mcp_url") or f"{ctx.base_url.rstrip('/')}/mcp"
+        headers = {k: v for k, v in (ctx.headers or {}).items() if isinstance(v, str)} or None
+        queue: asyncio.Queue[SenseEvent] = asyncio.Queue()
+
+        async def message_handler(message: Any) -> None:
+            event = _notification_to_event(message, ctx.endpoint.path)
+            if event is not None:
+                queue.put_nowait(event)
+
+        emitted = 0
+        loop = asyncio.get_running_loop()
+        deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
+        try:
+            async with (
+                streamablehttp_client(mcp_url, headers=headers) as (read, write, _),
+                ClientSession(read, write, message_handler=message_handler) as session,
+            ):
+                await session.initialize()
+                uri = meta.get("uri")
+                if uri:
+                    with contextlib.suppress(Exception):
+                        await session.subscribe_resource(uri)
+                level = meta.get("logging_level")
+                if level:
+                    with contextlib.suppress(Exception):
+                        await session.set_logging_level(level)
+                while True:
+                    timeout = None
+                    if deadline is not None:
+                        timeout = max(0.0, deadline - loop.time())
+                        if timeout == 0.0:
+                            return
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=timeout)
+                    except TimeoutError:
+                        return
+                    yield event
+                    emitted += 1
+                    if ctx.max_events is not None and emitted >= ctx.max_events:
+                        return
+        except Exception:
+            return
+
+
+def _notification_to_event(message: Any, source: str) -> SenseEvent | None:
+    """Shape an incoming MCP message into a SenseEvent, or None if it isn't a notification.
+
+    The ``message_handler`` receives request-responders, server notifications, and
+    exceptions; only notifications (a ``ServerNotification`` whose ``.root`` carries
+    a ``method``) become events. Notification params are dumped to a plain dict.
+    """
+    if isinstance(message, Exception):
+        return None
+    notif = getattr(message, "root", message)
+    method = getattr(notif, "method", None)
+    if not method:
+        return None  # a request-responder or something else — not a notification
+    raw_params = getattr(notif, "params", None)
+    params: dict[str, Any] = {}
+    if raw_params is not None:
+        if hasattr(raw_params, "model_dump"):
+            params = raw_params.model_dump(mode="json", exclude_none=True)
+        elif isinstance(raw_params, dict):
+            params = raw_params
+        else:
+            params = {"value": raw_params}
+    return SenseEvent(source=source, modality="message", payload={"method": method, "params": params})
 
 
 async def _call_tool(session: Any, meta: dict, params: dict | None) -> DriverResponse:

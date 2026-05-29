@@ -1,5 +1,6 @@
-"""Perception (`sense`) — the agent's afferent organ. SQLite delta-poll is
-verified in-process (deterministic, no deps); the supports_sense matrix is unit;
+"""Perception (`sense`) — the agent's afferent organ. SQLite/DuckDB delta-poll
+is verified in-process (deterministic, no deps); the supports_sense matrix is
+unit; Postgres LISTEN/NOTIFY push is driven through a fake asyncpg connection;
 Redis pub/sub has a live test that self-skips without a server."""
 
 from __future__ import annotations
@@ -25,9 +26,11 @@ class FakeVault:
 
 
 def test_supports_sense_matrix():
-    # All SQL backends + Redis can perceive; wire/API protocols can't.
-    for proto in ("sqlite", "duckdb", "postgres", "mysql", "mssql", "redis"):
+    # All SQL backends + Redis + the server-push stream protocols (WebSocket, SSE)
+    # can perceive; plain request/response wire/API protocols can't.
+    for proto in ("sqlite", "duckdb", "postgres", "mysql", "mssql", "redis", "ws", "sse", "mcp"):
         assert supports_sense(get_driver(proto)), proto
+    # Plain REST is request/response — a stream endpoint is discovered as "sse".
     assert not supports_sense(get_driver("http"))
     assert not supports_sense(get_driver("graphql"))
 
@@ -126,6 +129,46 @@ async def test_duckdb_delta_sense_reads_rows_past_cursor(tmp_path):
         seen = [e async for e in stream]
     assert [e.payload["kind"] for e in seen] == ["b", "c"]
     assert seen[-1].cursor == "3"
+
+
+async def test_postgres_listen_notify_push(monkeypatch):
+    # Native LISTEN/NOTIFY push path: a NOTIFY channel given via params/meta makes
+    # PostgresDriver.sense() yield each payload as it fires (no polling). Verified
+    # with a fake asyncpg connection that fires two notifications on LISTEN.
+    pytest.importorskip("asyncpg")
+    import asyncpg
+
+    class FakeConn:
+        async def add_listener(self, channel, cb):
+            async def fire():
+                await asyncio.sleep(0.05)
+                cb(self, 1, channel, '{"event": "created", "id": 1}')
+                cb(self, 1, channel, "plain-text")
+
+            asyncio.create_task(fire())  # noqa: RUF006 — fire-and-forget within the test
+
+        async def remove_listener(self, channel, cb): ...
+        async def close(self): ...
+
+    async def fake_connect(dsn):
+        return FakeConn()
+
+    monkeypatch.setattr(asyncpg, "connect", fake_connect)
+
+    ep = Endpoint(
+        path="/notify",
+        protocol="postgres",
+        method="GET",
+        transport_meta={"notify_channel": "orders"},
+    )
+    async with httpx.AsyncClient() as client:
+        fetcher = Fetcher(http_client=client, vault=FakeVault())
+        stream = await fetcher.sense(ep, "postgresql://localhost/db", "none", max_events=2, max_seconds=5)
+        seen = [e async for e in stream]
+
+    assert all(e.modality == "message" and e.payload["channel"] == "orders" for e in seen)
+    assert seen[0].payload["value"] == {"event": "created", "id": 1}  # JSON payload parsed
+    assert seen[1].payload["value"] == "plain-text"  # non-JSON kept as string
 
 
 _REDIS_URL = "redis://localhost:6379/15"
