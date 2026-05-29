@@ -29,6 +29,7 @@ from liquid.auth.schemes import (
     OAuth2Auth,
 )
 from liquid.cache import InMemoryCache
+from liquid.catalog import HttpCatalogRegistry
 from liquid.client import Liquid
 from liquid.diff_sync import FetchChangesResult
 from liquid.estimate import FetchEstimate, estimate_fetch
@@ -197,6 +198,7 @@ __all__ = [
     "GeoPoint",
     "GitHubWebhookVerifier",
     "HMACAuth",
+    "HttpCatalogRegistry",
     "IdempotencyStore",
     "InMemoryCache",
     "InMemoryEventStore",
