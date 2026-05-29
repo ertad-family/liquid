@@ -117,7 +117,24 @@ class PostgresDriver:
         return DriverResponse(status_code=200, records=[{"affected_rows": affected_from_status(status)}])
 
     async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
-        """Delta-poll new rows via the shared SQL sense loop (one asyncpg conn per session)."""
+        """Perceive new events from Postgres.
+
+        Two modes, chosen by configuration:
+
+        * **LISTEN/NOTIFY (native push)** — when a channel is given
+          (``params["channel"]`` or ``transport_meta["notify_channel"]``), the
+          driver ``LISTEN``\\ s and yields each ``NOTIFY`` payload as it fires —
+          true push, no polling. Payloads that parse as JSON are surfaced as
+          objects, else as a raw string.
+        * **delta-poll** — otherwise, fall back to the shared SQL delta-poll loop
+          over a watch column (new rows since the cursor).
+        """
+        channel = (ctx.params or {}).get("channel") or (ctx.endpoint.transport_meta or {}).get("notify_channel")
+        if channel:
+            async for event in self._sense_notify(ctx, str(channel)):
+                yield event
+            return
+
         import asyncpg
 
         try:
@@ -136,6 +153,64 @@ class PostgresDriver:
             async for event in run_sql_delta_sense(ctx, POSTGRES, run_query):
                 yield event
         finally:
+            await conn.close()
+
+    async def _sense_notify(self, ctx: SenseContext, channel: str) -> AsyncIterator[SenseEvent]:
+        """Native LISTEN/NOTIFY push loop on one asyncpg connection."""
+        import asyncio
+        import contextlib
+        import json
+
+        import asyncpg
+
+        from liquid.transport.base import SenseEvent
+
+        try:
+            dsn = await _resolve_dsn(ctx)
+        except DSNError:
+            return
+        try:
+            conn = await asyncpg.connect(dsn)
+        except Exception:
+            return
+
+        queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+        def _on_notify(_conn: Any, _pid: int, ch: str, payload: str) -> None:
+            queue.put_nowait((ch, payload))
+
+        emitted = 0
+        loop = asyncio.get_running_loop()
+        deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
+        try:
+            await conn.add_listener(channel, _on_notify)
+            while True:
+                timeout = None
+                if deadline is not None:
+                    timeout = max(0.0, deadline - loop.time())
+                    if timeout == 0.0:
+                        return
+                try:
+                    ch, payload = await asyncio.wait_for(queue.get(), timeout=timeout)
+                except TimeoutError:
+                    return
+                value: Any = payload
+                if isinstance(payload, str) and payload:
+                    with contextlib.suppress(ValueError, TypeError):
+                        value = json.loads(payload)
+                yield SenseEvent(
+                    source=ctx.endpoint.path,
+                    modality="message",
+                    payload={"channel": ch, "value": value},
+                )
+                emitted += 1
+                if ctx.max_events is not None and emitted >= ctx.max_events:
+                    return
+        except Exception:
+            return
+        finally:
+            with contextlib.suppress(Exception):
+                await conn.remove_listener(channel, _on_notify)
             await conn.close()
 
 

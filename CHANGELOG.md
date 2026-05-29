@@ -2,7 +2,17 @@
 
 All notable changes to Liquid will be documented in this file.
 
-## [0.55.0] - 2026-05-29
+## [0.56.0] - 2026-05-29
+
+### Added — Postgres LISTEN/NOTIFY (native DB push)
+`PostgresDriver.sense()` gains a **true-push** mode alongside its delta-poll:
+when a channel is configured (`params["channel"]` or
+`transport_meta["notify_channel"]`), the driver `LISTEN`s and yields each
+`NOTIFY` payload as it fires — no polling. JSON payloads surface as objects,
+others as a raw string; events are `modality="message"` carrying
+`{"channel", "value"}`. Without a channel it falls back to the shared SQL
+delta-poll loop (new rows since a watch cursor), so existing adapters are
+unchanged. Bounded by `max_events` / `max_seconds`.
 
 ### Added — streaming senses (server-push as perception)
 `sense()` — the agent's afferent organ — now perceives **push streams**, not just
