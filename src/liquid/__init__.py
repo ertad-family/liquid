@@ -4,6 +4,7 @@ from importlib.metadata import version as _pkg_version
 
 __version__ = _pkg_version("liquid-api")
 
+from liquid.adapters import list_bundled_adapters, load_bundled_adapter
 from liquid.agent_tools import (
     aggregate,
     check_quota,
@@ -262,8 +263,10 @@ __all__ = [
     "health_check",
     "infer_limits",
     "list_adapters",
+    "list_bundled_adapters",
     "list_canonical_intents",
     "llm_from_env",
+    "load_bundled_adapter",
     "lookup_known_limits",
     "normalize_datetime",
     "normalize_email",

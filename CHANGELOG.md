@@ -2,6 +2,24 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.52.0] - 2026-05-29
+
+### Added — bundled community adapters (public-domain, in the wheel)
+The OSS package now ships **pre-discovered & pre-mapped adapters** so popular
+public APIs work with **zero discovery and zero LLM** — previously OSS shipped
+none, and every user re-discovered from scratch.
+- `liquid.list_bundled_adapters()` / `liquid.load_bundled_adapter(name)` load an
+  adapter straight from the wheel into a ready `AdapterConfig` (use it with
+  `llm=None`). Backed by `importlib.resources`.
+- `src/liquid/adapters/*.json` is the portable `{"target_model","config"}` artifact,
+  released into the **public domain (CC0)**, separate from the AGPL code. First
+  entry: a verified, secret-free **Glama** adapter.
+- **Contribution = a PR upstream** (see `src/liquid/adapters/README.md`): connect →
+  export → scrub secrets → verify fetch → drop the JSON. Tests guard against
+  credential-like content; public/well-known APIs only.
+- This is the decentralized, OSS-native path to "shared adapters" — complementary
+  to the hosted cloud catalog (scale / search / empirical ranking).
+
 ## [0.51.2] - 2026-05-29
 
 ### Security — FileVault encrypts credentials at rest
