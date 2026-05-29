@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from liquid.models.adapter import AdapterConfig
 
-__all__ = ["list_bundled_adapters", "load_bundled_adapter"]
+__all__ = ["BundledAdapterRegistry", "list_bundled_adapters", "load_bundled_adapter"]
 
 
 def list_bundled_adapters() -> list[str]:
@@ -47,3 +47,52 @@ def load_bundled_adapter(name: str) -> AdapterConfig:
         raise FileNotFoundError(f"No bundled adapter {name!r}. Available: {available}")
     blob = json.loads(res.read_text(encoding="utf-8"))
     return AdapterConfig.model_validate(blob["config"])
+
+
+class BundledAdapterRegistry:
+    """Read-only :class:`~liquid.protocols.AdapterRegistry` over the bundled adapters.
+
+    Lets the wheel's public-domain adapters serve as a resolution **tier** in
+    :meth:`Liquid.get_or_create` — consulted before expensive discovery, after the
+    user's writable local registry. Writes are no-ops (the set is immutable; new
+    adapters arrive via a PR, not at runtime).
+    """
+
+    def __init__(self) -> None:
+        from liquid.models.adapter import AdapterConfig
+
+        self._configs: dict[str, AdapterConfig] = {}
+        self._target: dict[str, str] = {}
+        for name in list_bundled_adapters():
+            blob = json.loads((resources.files(__name__) / f"{name}.json").read_text(encoding="utf-8"))
+            cfg = AdapterConfig.model_validate(blob["config"])
+            self._configs[cfg.config_id] = cfg
+            self._target[cfg.config_id] = blob.get("target_model", "")
+
+    async def get(self, url: str, target_model: str) -> AdapterConfig | None:
+        for cid, cfg in self._configs.items():
+            if cfg.schema_.source_url == url and self._target.get(cid) == target_model:
+                return cfg
+        return None
+
+    async def get_by_service(self, service_name: str) -> list[AdapterConfig]:
+        name = service_name.lower()
+        return [c for c in self._configs.values() if c.schema_.service_name.lower() == name]
+
+    async def search(self, query: str) -> list[AdapterConfig]:
+        q = query.lower()
+        return [
+            c
+            for c in self._configs.values()
+            if q in c.schema_.service_name.lower() or q in c.schema_.source_url.lower()
+        ]
+
+    async def list_all(self) -> list[AdapterConfig]:
+        return list(self._configs.values())
+
+    async def save(self, config: AdapterConfig, target_model: str) -> None:
+        # Immutable tier — contributions arrive via PR, not at runtime.
+        return
+
+    async def delete(self, config_id: str) -> None:
+        return

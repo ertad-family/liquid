@@ -184,12 +184,24 @@ class Liquid:
         on_schema_mismatch: Callable[[Any], None] | None = None,
         validation_coverage_threshold: float = 0.9,
         event_store: Any | None = None,
+        catalog: AdapterRegistry | None = None,
+        use_bundled_adapters: bool = True,
     ) -> None:
         self.llm = llm
         self.vault = vault
         self.sink = sink
         self.knowledge = knowledge
         self.registry = registry
+        # Read-only resolution tiers consulted by get_or_create between the user's
+        # writable registry and (last resort) discovery: bundled wheel adapters,
+        # then an optional cloud catalog. Order = priority.
+        self._read_tiers: list[AdapterRegistry] = []
+        if use_bundled_adapters:
+            from liquid.adapters import BundledAdapterRegistry
+
+            self._read_tiers.append(BundledAdapterRegistry())
+        if catalog is not None:
+            self._read_tiers.append(catalog)
         self.event_handler = event_handler
         self._http_client = http_client
         self._retry_policy = retry_policy
@@ -544,17 +556,26 @@ class Liquid:
 
         target_key = json.dumps(target_model, sort_keys=True)
 
-        # Step 1: Exact match (same URL + same model) → free
-        existing = await self.registry.get(url, target_key)
-        if existing is not None:
-            return existing
-
-        # Step 2: Service match (same service, different model) → re-map only
+        # Resolution tiers, by priority: the user's writable registry, then the
+        # read-only tiers (bundled wheel adapters, then optional cloud catalog).
+        # Discovery (Step 3) runs only if no tier can satisfy the request.
         from liquid.discovery.utils import infer_service_name
 
+        tiers: list[AdapterRegistry] = [self.registry, *self._read_tiers]
         service_hint = infer_service_name(url)
-        service_matches = await self.registry.get_by_service(service_hint)
-        if service_matches:
+
+        # Step 1: Exact match (same URL + same model) in any tier → free, no LLM.
+        for tier in tiers:
+            exact = await tier.get(url, target_key)
+            if exact is not None:
+                return exact
+
+        # Step 2: Service match (same service, different model) → re-map only.
+        # First tier that knows the service wins (writable registry has priority).
+        for tier in tiers:
+            service_matches = await tier.get_by_service(service_hint)
+            if not service_matches:
+                continue
             template = service_matches[0]
             proposals = await self._mapping_proposer.propose(template.schema_, target_model)
             review = MappingReview(proposals)
@@ -577,7 +598,7 @@ class Liquid:
                     sync=SyncConfig(endpoints=[ep.path for ep in template.schema_.endpoints]),
                     actions=actions,
                 )
-                await self.registry.save(config, target_key)
+                await self.registry.save(config, target_key)  # cache into the writable tier
                 return config
             return review
 

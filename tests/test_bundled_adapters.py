@@ -3,11 +3,13 @@ A live fetch (network) proves zero-LLM reuse end to end."""
 
 from __future__ import annotations
 
+import json
 from importlib import resources
 
 import pytest
 
 from liquid import list_bundled_adapters, load_bundled_adapter
+from liquid.adapters import BundledAdapterRegistry
 from liquid.models.adapter import AdapterConfig
 
 
@@ -52,3 +54,77 @@ async def test_bundled_glama_fetches_with_no_llm():
     except (httpx.HTTPError, LiquidError) as e:  # transient network issue shouldn't fail the suite
         pytest.skip(f"Glama API unreachable: {e}")
     assert isinstance(data, list) and data and "name" in data[0]
+
+
+# --- tiered resolution in get_or_create -----------------------------------
+
+
+async def test_bundled_registry_lookup():
+    reg = BundledAdapterRegistry()
+    matches = await reg.get_by_service("glama")
+    assert matches and matches[0].config_id == "bundled-glama"
+    assert "bundled-glama" in [c.config_id for c in await reg.list_all()]
+
+
+async def test_get_or_create_resolves_bundled_without_discovery_or_llm():
+    # The bundled tier satisfies an exact url+model request → no discovery, no LLM.
+    from liquid._defaults import CollectorSink, InMemoryAdapterRegistry, InMemoryVault
+    from liquid.client import Liquid
+
+    blob = json.loads((resources.files("liquid.adapters") / "glama.json").read_text())
+    target_model = json.loads(blob["target_model"])
+    url = blob["config"]["schema"]["source_url"]
+
+    lq = Liquid(llm=None, vault=InMemoryVault(), sink=CollectorSink(), registry=InMemoryAdapterRegistry())
+    result = await lq.get_or_create(url, target_model, auto_approve=True)
+    assert isinstance(result, AdapterConfig)
+    assert result.config_id == "bundled-glama"  # came from the wheel, not discovery
+
+
+async def test_custom_catalog_tier_is_consulted():
+    # Extension point for the cloud catalog: any AdapterRegistry passed as
+    # `catalog=` is consulted as a resolution tier (here via exact match).
+    from liquid._defaults import CollectorSink, InMemoryAdapterRegistry, InMemoryVault
+    from liquid.client import Liquid
+
+    prebuilt = load_bundled_adapter("glama")
+
+    class FakeCatalog:
+        async def get(self, url, target_model):
+            return prebuilt if url == "https://catalog.example/svc" else None
+
+        async def get_by_service(self, service_name):
+            return []
+
+        async def search(self, query):
+            return []
+
+        async def list_all(self):
+            return [prebuilt]
+
+        async def save(self, config, target_model): ...
+        async def delete(self, config_id): ...
+
+    lq = Liquid(
+        llm=None,
+        vault=InMemoryVault(),
+        sink=CollectorSink(),
+        registry=InMemoryAdapterRegistry(),
+        catalog=FakeCatalog(),
+    )
+    result = await lq.get_or_create("https://catalog.example/svc", {"a": "str"}, auto_approve=True)
+    assert isinstance(result, AdapterConfig) and result.config_id == "bundled-glama"
+
+
+async def test_bundled_tier_can_be_disabled():
+    from liquid._defaults import CollectorSink, InMemoryAdapterRegistry, InMemoryVault
+    from liquid.client import Liquid
+
+    lq = Liquid(
+        llm=None,
+        vault=InMemoryVault(),
+        sink=CollectorSink(),
+        registry=InMemoryAdapterRegistry(),
+        use_bundled_adapters=False,
+    )
+    assert lq._read_tiers == []
