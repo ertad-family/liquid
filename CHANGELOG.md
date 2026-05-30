@@ -18,8 +18,12 @@ the "Home Assistant of cars": one OAuth2 REST integration reaches them all.
   Smartcar's webhooks at `Liquid.sense_webhook`.
 
 httpx-only (core). The OAuth2 access token is caller-supplied (run Smartcar
-Connect to obtain it), never persisted. Targets Smartcar API v2.0. Built against
-the documented contract; not yet verified against a live account.
+Connect to obtain it), never persisted. Targets Smartcar API v2.0. **Contract
+verified against the official Smartcar Python SDK (v6.19.1)** — read paths, the
+`/security` and `/charge` action paths + bodies, the `/v2.0/vehicles` list, Bearer
+auth and the `sc-unit-system` header all match; real connectivity confirmed live
+via the Management API. (Smartcar also has a newer v3 "signals" read model — a
+possible future addition.)
 
 ## [0.60.0] - 2026-05-29
 

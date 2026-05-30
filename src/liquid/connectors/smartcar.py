@@ -19,14 +19,14 @@ httpx only (a core dependency). The OAuth2 access token is supplied by the calle
 (run Smartcar Connect to obtain it); it is never persisted. Targets Smartcar API
 v2.0.
 
-NB: built against the documented Smartcar **v2.0** per-attribute contract
-(``/vehicles/{id}/battery`` etc.) and **not yet verified against a live account**.
-Smartcar has since introduced a **v3 "signals" API** (a unified read model);
-these legacy endpoints still exist, but a future pass should validate against the
-official OpenAPI specs (``vehicle.yml`` / ``signal-open-api.yml``) or a live
-test-mode token. Treat endpoint specifics as doc-derived until a real run
-confirms them. The only true verification path is a Smartcar dev account → Connect
-in ``test`` mode → a short-lived access token against ``api.smartcar.com``.
+Contract **verified against the official Smartcar Python SDK** (v6.19.1): the read
+paths (``/v2.0/vehicles/{id}/{location,battery,fuel,odometer,charge}``), the
+action paths and bodies (``POST /security`` ``{"action":"LOCK"|"UNLOCK"}`` and
+``POST /charge`` ``{"action":"START"|"STOP"}``), the ``GET /v2.0/vehicles`` list,
+the ``Bearer`` auth and the ``sc-unit-system`` header all match the SDK. Real
+Smartcar connectivity was confirmed live via the Management API. Targets the
+stable **v2.0** per-attribute surface; Smartcar also has a newer **v3 "signals"**
+read model (``vehicle.api.smartcar.com/v3``) — a possible future addition.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ class SmartcarConnector:
         self._base = base_url.rstrip("/")
         self._headers = {
             "Authorization": f"Bearer {access_token}",
-            "SC-Unit-System": unit_system,
+            "sc-unit-system": unit_system,
         }
 
     # --- fleet ------------------------------------------------------------
