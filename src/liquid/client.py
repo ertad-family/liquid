@@ -19,6 +19,7 @@ from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.manifest import ManifestDiscovery
 from liquid.discovery.mcp import MCPDiscovery
 from liquid.discovery.mongodb import MongoDBDiscovery
+from liquid.discovery.mqtt import MQTTDiscovery
 from liquid.discovery.mssql import MSSQLDiscovery
 from liquid.discovery.mysql import MySQLDiscovery
 from liquid.discovery.neo4j import Neo4jDiscovery
@@ -367,6 +368,7 @@ class Liquid:
                     MSSQLDiscovery(),
                     MongoDBDiscovery(),
                     RedisDiscovery(),
+                    MQTTDiscovery(),
                     # User-registered SQL backends defined as data (dialect manifests).
                     ManifestDiscovery(),
                     GRPCDiscovery(),

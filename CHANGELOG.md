@@ -2,6 +2,27 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.62.0] - 2026-05-30
+
+### Added — MQTT transport driver (IoT pub/sub as senses & hands)
+A `ProtocolDriver` for MQTT (scheme `mqtt`) — the lingua franca of IoT, makers,
+and (via Sparkplug B) the factory floor. One driver reaches every device on the
+broker:
+
+- **`sense`** — subscribe to a topic filter and yield each message as a
+  `modality="message"` `SenseEvent` (`{"topic", "value"}`). **Native push** (the
+  broker delivers as publishers fire — like Redis pub/sub), composes with
+  `react` / `merge_senses`.
+- **`fetch`** — a bounded batch (subscribe, collect retained/incoming messages
+  until `max_records` / `max_seconds`).
+- **`write`** — publish to a topic (the hands); `delete` clears a retained message.
+
+`mqtt://` / `mqtts://` URLs (TLS), optional `user:pass@`; payloads JSON-decoded.
+`MQTTDiscovery` claims a reachable broker (`discovery_method="mqtt"`). Requires
+the `mqtt` extra (`aiomqtt`); imported function-locally so the core stays
+dependency-free. **Verified live end-to-end** against an in-process broker
+(publish → sense round-trip), plus deterministic unit tests with a fake client.
+
 ## [0.61.0] - 2026-05-29
 
 ### Added — Smartcar connector (cars as senses & hands)

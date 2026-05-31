@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.61.0"
+version = "0.62.0"
 description = "Connect your AI agent to anything — APIs, databases, and agents; read, write, and sense."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -97,11 +97,17 @@ redis = [
     # Redis-as-an-interface: keyspace namespaces as endpoints.
     "redis>=5.0",
 ]
+mqtt = [
+    # MQTT-as-an-interface: IoT pub/sub — subscribe (sense), publish (write).
+    "aiomqtt>=2.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.11",
     "pre-commit>=4.0",
+    # In-process MQTT broker for the live MQTT round-trip test (self-skips if absent).
+    "amqtt>=0.11",
 ]
 
 [build-system]

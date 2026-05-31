@@ -28,7 +28,7 @@ class FakeVault:
 def test_supports_sense_matrix():
     # All SQL backends + Redis + the server-push stream protocols (WebSocket, SSE)
     # can perceive; plain request/response wire/API protocols can't.
-    for proto in ("sqlite", "duckdb", "postgres", "mysql", "mssql", "redis", "ws", "sse", "mcp"):
+    for proto in ("sqlite", "duckdb", "postgres", "mysql", "mssql", "redis", "ws", "sse", "mcp", "mqtt"):
         assert supports_sense(get_driver(proto)), proto
     # Plain REST is request/response — a stream endpoint is discovered as "sse".
     assert not supports_sense(get_driver("http"))

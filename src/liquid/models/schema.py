@@ -123,6 +123,7 @@ class APISchema(BaseModel):
         "mssql",
         "mongodb",
         "redis",
+        "mqtt",
         "manifest",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)

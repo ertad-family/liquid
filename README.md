@@ -20,7 +20,8 @@ agent might need to touch — Liquid figures out *how to talk to it* so the agen
 doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 `sense` perceives a live event stream, `write` acts on the world.
 
-- **Web APIs** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket, SSE/NDJSON streams
+- **Web APIs & messaging** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket,
+  SSE/NDJSON streams, MQTT (IoT pub/sub — subscribe to sense, publish to act)
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
 - **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
   Neo4j (graph), MongoDB (documents), Redis (key-value)
@@ -325,6 +326,7 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | Neo4j (graph) | ✅ labels/relationship types, property filters | ✅ node CRUD | `liquid-api[neo4j]` |
 | MongoDB (document) | ✅ collections, field filters, pagination | ✅ | `liquid-api[mongodb]` |
 | Redis (key-value) | ✅ keyspace namespaces, typed values, SCAN paging | ✅ SET/HSET/DEL | `liquid-api[redis]` |
+| MQTT (IoT pub/sub) | ✅ subscribe → batch + live `sense` | ✅ publish | `liquid-api[mqtt]` |
 
 **Read and write.** `liquid.write(adapter, endpoint, op="insert", values={...},
 allow_write=True)` mutates any database (SQL `INSERT`/`UPDATE`/`DELETE`, Mongo
