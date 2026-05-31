@@ -123,6 +123,7 @@ class MCPDriver:
                     if ctx.max_events is not None and emitted >= ctx.max_events:
                         return
         except Exception:
+            logger.debug("MCP notification sense stream ended on error (%s)", mcp_url, exc_info=True)
             return
 
 

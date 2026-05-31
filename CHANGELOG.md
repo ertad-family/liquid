@@ -2,6 +2,107 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.63.0] - 2026-05-30
+
+### Added — industrial drivers: Modbus + OPC UA (the factory floor as senses & hands)
+Two `ProtocolDriver`s for the two dominant industrial protocols — one driver each
+reaches every PLC / sensor / SCADA that speaks them. Both verified live end-to-end
+against in-process servers.
+
+- **Modbus** (scheme `modbus`, `modbus://host:port`, extra `modbus`/`pymodbus`):
+  `fetch` reads a block of holding/input registers or coils/discrete inputs →
+  `{address, value}`; `write` sets a holding register or coil; `sense` delta-polls
+  the block and emits a `modality="data"` event on each value change (Modbus has
+  no push). Unit/bank/address/count via `transport_meta`.
+- **OPC UA** (scheme `opcua`, `opc.tcp://[user:pass@]host:port`, extra
+  `opcua`/`asyncua`): `fetch`/`write` read/write node values by `NodeId`; `sense`
+  uses a **native subscription** (monitored items → data-change notifications) —
+  true server push, like MQTT/Redis. `OPCUADiscovery` browses the address space
+  for variables and turns each into an endpoint.
+
+`discovery_method` values `modbus` / `opcua` added to `APISchema` (the 0.59.2
+literal guard covers them). Both imported function-locally so the core stays
+dependency-free.
+
+## [0.62.0] - 2026-05-30
+
+### Added — MQTT transport driver (IoT pub/sub as senses & hands)
+A `ProtocolDriver` for MQTT (scheme `mqtt`) — the lingua franca of IoT, makers,
+and (via Sparkplug B) the factory floor. One driver reaches every device on the
+broker:
+
+- **`sense`** — subscribe to a topic filter and yield each message as a
+  `modality="message"` `SenseEvent` (`{"topic", "value"}`). **Native push** (the
+  broker delivers as publishers fire — like Redis pub/sub), composes with
+  `react` / `merge_senses`.
+- **`fetch`** — a bounded batch (subscribe, collect retained/incoming messages
+  until `max_records` / `max_seconds`).
+- **`write`** — publish to a topic (the hands); `delete` clears a retained message.
+
+`mqtt://` / `mqtts://` URLs (TLS), optional `user:pass@`; payloads JSON-decoded.
+`MQTTDiscovery` claims a reachable broker (`discovery_method="mqtt"`). Requires
+the `mqtt` extra (`aiomqtt`); imported function-locally so the core stays
+dependency-free. **Verified live end-to-end** against an in-process broker
+(publish → sense round-trip), plus deterministic unit tests with a fake client.
+
+## [0.61.0] - 2026-05-29
+
+### Added — Smartcar connector (cars as senses & hands)
+`liquid.connectors.SmartcarConnector` connects an agent to a connected vehicle
+through Smartcar's unified API (~30+ brands — Tesla, Ford, BMW, VW, Hyundai, …),
+the "Home Assistant of cars": one OAuth2 REST integration reaches them all.
+
+- **Probe**: `location`, `battery`, `fuel`, `odometer`, `charge`, `info`.
+- **Hands**: `lock` / `unlock`, `start_charge` / `stop_charge`.
+- **Perceive**: `sense(vehicle_id, signals=("location","battery"), poll_interval=)`
+  — Smartcar has no live push, so this *delta-polls* the requested signals and
+  yields a `modality="data"` `SenseEvent` whenever one changes (baseline poll not
+  emitted). Composes with `react` / `merge_senses`. For true event push, point
+  Smartcar's webhooks at `Liquid.sense_webhook`.
+
+httpx-only (core). The OAuth2 access token is caller-supplied (run Smartcar
+Connect to obtain it), never persisted. Targets Smartcar API v2.0. **Contract
+verified against the official Smartcar Python SDK (v6.19.1)** — read paths, the
+`/security` and `/charge` action paths + bodies, the `/v2.0/vehicles` list, Bearer
+auth and the `sc-unit-system` header all match; real connectivity confirmed live
+via the Management API. (Smartcar also has a newer v3 "signals" read model — a
+possible future addition.)
+
+## [0.60.0] - 2026-05-29
+
+### Added — Home Assistant connector (smart home as senses & hands)
+`liquid.connectors.HomeAssistantConnector` connects an agent to a whole smart
+home through one API — HA already abstracts thousands of devices.
+
+- **`sense(event_type="state_changed", ...)`** — subscribes to HA's WebSocket
+  event bus (running its `auth_required`→`auth`→`auth_ok`→`subscribe_events`
+  handshake) and yields each event as a `modality="message"` `SenseEvent`
+  (payload = `entity_id` / `new_state` / `old_state`, `source` = the entity).
+  Composes with `react` / `merge_senses` — the agent *perceives the home live*.
+- **`call_service(domain, service, entity_id=, **data)`** — the hands: call any
+  HA service (`light.turn_on`, `lock.lock`, `media_player.play_media`, …).
+- **`get_states()` / `get_state(entity_id)`** — probe current state;
+  **`config()`** — verify the token.
+
+REST on `httpx` (core); live `sense` needs the `ws` extra. The long-lived access
+token is caller-supplied, never persisted. Joins `TelegramConnector` under
+`liquid.connectors` (and note: HA itself fronts Android TV / Chromecast / etc.,
+so "agent controls the TV" comes through here without the per-device pairing).
+
+## [0.59.2] - 2026-05-29
+
+### Changed — sense streams leave a debug breadcrumb when they end on error
+Hardening follow-up to the 0.59.1 SSE bugs (which were invisible partly because a
+broad `except` swallowed them with no log). Every `sense()` loop is still
+resilient by design — a dropped connection just ends the stream — but it now logs
+the cause at `DEBUG` with a traceback (`exc_info=True`) so a *bug* mid-stream
+isn't fully silent. Applied across all sense drivers: the shared SQL delta-poll
+loop (`_sql.py`, covers Postgres/MySQL/SQLite/DuckDB/MSSQL), Postgres
+LISTEN/NOTIFY, Redis pub/sub, HTTP SSE/NDJSON, and MCP notifications. Audit
+confirmed event-shaping (`SenseEvent` construction) sits *outside* the
+connection-error guard in the shared loop, so a shaping bug propagates rather
+than being swallowed. No behavior change beyond the added logging.
+
 ## [0.59.1] - 2026-05-29
 
 ### Fixed — SSE discovery actually works now

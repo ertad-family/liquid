@@ -27,10 +27,13 @@ from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.grpc_driver import GRPCDriver
 from liquid.transport.http import HTTPDriver
 from liquid.transport.mcp_driver import MCPDriver
+from liquid.transport.modbus_driver import ModbusDriver
 from liquid.transport.mongodb import MongoDBDriver
+from liquid.transport.mqtt_driver import MQTTDriver
 from liquid.transport.mssql import MSSQLDriver
 from liquid.transport.mysql import MySQLDriver
 from liquid.transport.neo4j_driver import Neo4jDriver
+from liquid.transport.opcua_driver import OPCUADriver
 from liquid.transport.postgres import PostgresDriver
 from liquid.transport.redis_driver import RedisDriver
 from liquid.transport.soap import SOAPDriver
@@ -54,6 +57,9 @@ register_driver(DuckDBDriver())
 register_driver(MSSQLDriver())
 register_driver(MongoDBDriver())
 register_driver(RedisDriver())
+register_driver(MQTTDriver())
+register_driver(ModbusDriver())
+register_driver(OPCUADriver())
 
 __all__ = [
     "A2ADriver",
@@ -64,10 +70,13 @@ __all__ = [
     "GraphQLDriver",
     "HTTPDriver",
     "MCPDriver",
+    "MQTTDriver",
     "MSSQLDriver",
+    "ModbusDriver",
     "MongoDBDriver",
     "MySQLDriver",
     "Neo4jDriver",
+    "OPCUADriver",
     "PostgresDriver",
     "ProtocolDriver",
     "RedisDriver",

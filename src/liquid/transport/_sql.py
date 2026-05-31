@@ -15,6 +15,7 @@ individual drivers.
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -29,6 +30,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable, Sequence
 
     from liquid.transport.base import FetchContext, SenseContext
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LIMIT = 1000
 MAX_LIMIT = 10_000
@@ -273,6 +276,7 @@ async def run_sql_delta_sense(ctx: SenseContext, dialect: Dialect, run_query: An
         try:
             rows = await run_query(sql, args)
         except Exception:
+            logger.debug("SQL delta-poll sense stream ended on error (%s)", ctx.endpoint.path, exc_info=True)
             return
         for row in rows:
             cursor_val = row.pop("__cursor__", last)
