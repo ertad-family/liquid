@@ -2,6 +2,28 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.63.0] - 2026-05-30
+
+### Added — industrial drivers: Modbus + OPC UA (the factory floor as senses & hands)
+Two `ProtocolDriver`s for the two dominant industrial protocols — one driver each
+reaches every PLC / sensor / SCADA that speaks them. Both verified live end-to-end
+against in-process servers.
+
+- **Modbus** (scheme `modbus`, `modbus://host:port`, extra `modbus`/`pymodbus`):
+  `fetch` reads a block of holding/input registers or coils/discrete inputs →
+  `{address, value}`; `write` sets a holding register or coil; `sense` delta-polls
+  the block and emits a `modality="data"` event on each value change (Modbus has
+  no push). Unit/bank/address/count via `transport_meta`.
+- **OPC UA** (scheme `opcua`, `opc.tcp://[user:pass@]host:port`, extra
+  `opcua`/`asyncua`): `fetch`/`write` read/write node values by `NodeId`; `sense`
+  uses a **native subscription** (monitored items → data-change notifications) —
+  true server push, like MQTT/Redis. `OPCUADiscovery` browses the address space
+  for variables and turns each into an endpoint.
+
+`discovery_method` values `modbus` / `opcua` added to `APISchema` (the 0.59.2
+literal guard covers them). Both imported function-locally so the core stays
+dependency-free.
+
 ## [0.62.0] - 2026-05-30
 
 ### Added — MQTT transport driver (IoT pub/sub as senses & hands)

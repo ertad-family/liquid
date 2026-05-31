@@ -18,11 +18,13 @@ from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.manifest import ManifestDiscovery
 from liquid.discovery.mcp import MCPDiscovery
+from liquid.discovery.modbus import ModbusDiscovery
 from liquid.discovery.mongodb import MongoDBDiscovery
 from liquid.discovery.mqtt import MQTTDiscovery
 from liquid.discovery.mssql import MSSQLDiscovery
 from liquid.discovery.mysql import MySQLDiscovery
 from liquid.discovery.neo4j import Neo4jDiscovery
+from liquid.discovery.opcua import OPCUADiscovery
 from liquid.discovery.openapi import OpenAPIDiscovery
 from liquid.discovery.plugin_manifest import PluginManifestDiscovery
 from liquid.discovery.postgres import PostgresDiscovery
@@ -369,6 +371,8 @@ class Liquid:
                     MongoDBDiscovery(),
                     RedisDiscovery(),
                     MQTTDiscovery(),
+                    ModbusDiscovery(),
+                    OPCUADiscovery(),
                     # User-registered SQL backends defined as data (dialect manifests).
                     ManifestDiscovery(),
                     GRPCDiscovery(),

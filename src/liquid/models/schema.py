@@ -124,6 +124,8 @@ class APISchema(BaseModel):
         "mongodb",
         "redis",
         "mqtt",
+        "modbus",
+        "opcua",
         "manifest",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)

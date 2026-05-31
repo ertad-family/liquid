@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.62.0"
+version = "0.63.0"
 description = "Connect your AI agent to anything — APIs, databases, and agents; read, write, and sense."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -100,6 +100,14 @@ redis = [
 mqtt = [
     # MQTT-as-an-interface: IoT pub/sub — subscribe (sense), publish (write).
     "aiomqtt>=2.0",
+]
+modbus = [
+    # Modbus-as-an-interface: industrial register read/write (PLCs, sensors).
+    "pymodbus>=3.5",
+]
+opcua = [
+    # OPC UA-as-an-interface: Industry-4.0 node read/write + native subscriptions.
+    "asyncua>=1.0",
 ]
 dev = [
     "pytest>=8.0",

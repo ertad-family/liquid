@@ -22,6 +22,8 @@ doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 
 - **Web APIs & messaging** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket,
   SSE/NDJSON streams, MQTT (IoT pub/sub — subscribe to sense, publish to act)
+- **Industrial / OT** — Modbus (PLCs, sensors) and OPC UA (Industry-4.0 nodes,
+  native subscriptions) — read, write, and sense the factory floor
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
 - **Databases** — Postgres (+ pgvector), MySQL/MariaDB, SQLite, DuckDB, SQL Server,
   Neo4j (graph), MongoDB (documents), Redis (key-value)
@@ -327,6 +329,8 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | MongoDB (document) | ✅ collections, field filters, pagination | ✅ | `liquid-api[mongodb]` |
 | Redis (key-value) | ✅ keyspace namespaces, typed values, SCAN paging | ✅ SET/HSET/DEL | `liquid-api[redis]` |
 | MQTT (IoT pub/sub) | ✅ subscribe → batch + live `sense` | ✅ publish | `liquid-api[mqtt]` |
+| Modbus (industrial) | ✅ register/coil read + delta-poll `sense` | ✅ register/coil write | `liquid-api[modbus]` |
+| OPC UA (industrial) | ✅ node read + native-subscription `sense` | ✅ node write | `liquid-api[opcua]` |
 
 **Read and write.** `liquid.write(adapter, endpoint, op="insert", values={...},
 allow_write=True)` mutates any database (SQL `INSERT`/`UPDATE`/`DELETE`, Mongo
