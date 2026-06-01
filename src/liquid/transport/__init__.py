@@ -8,6 +8,7 @@ dispatches through :func:`get_driver`.
 from __future__ import annotations
 
 from liquid.transport.a2a import A2ADriver
+from liquid.transport.adb_driver import ADBDriver
 from liquid.transport.base import (
     DriverResponse,
     FetchContext,
@@ -60,9 +61,11 @@ register_driver(RedisDriver())
 register_driver(MQTTDriver())
 register_driver(ModbusDriver())
 register_driver(OPCUADriver())
+register_driver(ADBDriver())
 
 __all__ = [
     "A2ADriver",
+    "ADBDriver",
     "DriverResponse",
     "DuckDBDriver",
     "FetchContext",

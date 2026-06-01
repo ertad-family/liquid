@@ -41,6 +41,7 @@ def test_supports_sense_matrix():
         "mqtt",
         "modbus",
         "opcua",
+        "adb",
     ):
         assert supports_sense(get_driver(proto)), proto
     # Plain REST is request/response — a stream endpoint is discovered as "sse".
