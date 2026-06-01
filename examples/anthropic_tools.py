@@ -35,7 +35,10 @@ async def main():
     #     tools=tools,
     #     messages=[{"role": "user", "content": "List 5 orders"}],
     # )
-    # # Handle tool_use blocks, call liquid.execute_tool_call() for each
+    # # For each tool_use block, dispatch by tool name to the matching Liquid call:
+    # #   list_*/get_* -> liquid.fetch / liquid.query · create_*/update_*/delete_* ->
+    # #   liquid.execute · sense_* -> drain liquid.sense(...). Feed results back as
+    # #   tool_result blocks.
     # print(response)
 
     print("See README for a complete runnable example.")

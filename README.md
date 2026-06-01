@@ -1,11 +1,14 @@
 # Liquid
 
-**Connect your AI agent to anything.**
+**Connect your AI agent to anything — with no connector to write or maintain.**
 
-APIs, databases, and other agents — discovered automatically, read and write,
-through one stable, token-efficient, self-healing interface. No per-service
-connector to write or maintain: Liquid learns each one, and re-learns it when it
-changes.
+Point Liquid at a URL or a database and it works out the interface for you:
+discovers its shape, maps it to the fields you asked for, and handles auth,
+pagination and normalization — typed records, no client code. When the upstream
+drifts, it re-maps and keeps going. The same small API — `fetch` · `query` ·
+`write` · `sense` — reaches web APIs, databases, other agents (MCP/A2A), and even
+IoT and industrial systems (MQTT, Modbus, OPC UA, BACnet). An LLM does the
+learning at setup (and on drift); the data path itself makes no model call.
 
 [![PyPI](https://img.shields.io/pypi/v/liquid-api.svg)](https://pypi.org/project/liquid-api/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/ertad-family/liquid/blob/main/LICENSE)
@@ -390,6 +393,11 @@ fetched from the network as JSON, connects without a release. New protocols
 otherwise plug in via the `liquid.transport.ProtocolDriver` protocol; SQL backends
 share a dialect-aware core, so a new one is a ~80-line adapter.
 
+**Want to teach Liquid a new protocol?** A complete transport driver
+(`fetch`/`write`/`sense`) is typically ~150 lines — see
+[docs/ADDING_A_DRIVER.md](docs/ADDING_A_DRIVER.md) for the walkthrough and a
+wishlist (CAN bus, CoAP, KNX, AMQP, NATS, SNMP, …). Contributions welcome.
+
 2,500+ APIs are pre-discovered and pre-mapped in the
 [global catalog](https://liquid.ertad.family/catalog) — most popular services
 connect with zero discovery cost.
@@ -403,8 +411,9 @@ URL / DSN                       Agent
    ↓                              ↑
  one ProtocolDriver per          Deterministic per-protocol transport
  interface:                        • Query DSL (server-side filter)
-   REST GraphQL SOAP gRPC WS       • Output normalization
-   MCP A2A · SQL graph doc KV      • Verbosity / max_tokens / _meta
+   REST GraphQL gRPC WS SSE MQTT   • Output normalization
+   MCP A2A · SQL graph doc KV ·    • Verbosity / max_tokens / _meta
+   Modbus OPC-UA BACnet ADB …      • (full protocol list in the table above)
    ↓                              • Structured recovery + self-heal
  APISchema                        • Rate-limit-aware token bucket
    ↓                              • Response cache (Cache-Control aware)

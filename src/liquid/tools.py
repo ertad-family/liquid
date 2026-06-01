@@ -54,6 +54,18 @@ def adapter_to_tools(
             tool["metadata"] = _build_metadata(ep, config)
         tools.append(tool)
 
+        # Sense tool for sense-capable endpoints (live event perception — the
+        # agent's afferent organ; drain-by-pull, mirrors the MCP liquid_sense tool).
+        if _is_sense_capable(ep):
+            sense_tool: dict[str, Any] = {
+                "name": "sense_" + _derive_resource_from_path(ep.path),
+                "description": _build_sense_description(ep),
+                "parameters": _sense_input_schema(),
+            }
+            if style == "agent-friendly":
+                sense_tool["metadata"] = _build_metadata(ep, config)
+            tools.append(sense_tool)
+
         # Additional search tool for agent-friendly style
         if style == "agent-friendly":
             search_name = "search_" + _derive_resource_from_path(ep.path)
@@ -410,6 +422,40 @@ def _json_type_to_python(json_type: str) -> type:
 # ---------------------------------------------------------------------------
 # Search tool helpers
 # ---------------------------------------------------------------------------
+
+
+def _is_sense_capable(endpoint: Endpoint) -> bool:
+    """Whether this endpoint's protocol can perceive a live event stream."""
+    from liquid.transport import get_driver, supports_sense
+
+    try:
+        return supports_sense(get_driver(endpoint.protocol))
+    except Exception:
+        return False
+
+
+def _build_sense_description(endpoint: Endpoint) -> str:
+    return (
+        f"Perceive events from {endpoint.path} since `cursor` — new rows, messages, or signals "
+        "as they occur. Call repeatedly, passing back the last `next_cursor`, to stay aware of "
+        "changes without re-seeing old events. Returns a batch of events (each with a modality, "
+        "payload, and cursor) plus a next_cursor. Read-only; bounded by max_events / max_seconds."
+    )
+
+
+def _sense_input_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "cursor": {
+                "type": "string",
+                "description": "Resume token from a previous call's next_cursor; omit to start from now.",
+            },
+            "max_events": {"type": "integer", "description": "Max events to return this call (default 50)."},
+            "max_seconds": {"type": "number", "description": "Max seconds to wait for events (default 5)."},
+        },
+        "required": [],
+    }
 
 
 def _build_search_description(endpoint: Endpoint) -> str:

@@ -52,6 +52,13 @@ Open a [feature request](https://github.com/ertad-family/liquid/issues/new?templ
 
 New to the project? Check issues labeled [`good first issue`](https://github.com/ertad-family/liquid/labels/good%20first%20issue) — they're designed to be approachable without deep knowledge of the codebase.
 
+### Add a transport driver (≈150 lines)
+
+The most rewarding contribution: teach Liquid a new protocol so an agent can
+`fetch` / `write` / `sense` over it. A complete driver is typically ~150 lines and
+follows one well-trodden pattern — see **[docs/ADDING_A_DRIVER.md](docs/ADDING_A_DRIVER.md)**
+for the full walkthrough and a wishlist (CAN bus, CoAP, KNX, AMQP, NATS, SNMP, …).
+
 ### Pull Requests
 
 1. Fork the repo and create a branch from `develop`:
