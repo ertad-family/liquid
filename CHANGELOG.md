@@ -2,6 +2,26 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.65.0] - 2026-06-01
+
+### Added — BACnet transport driver (building automation as senses & hands)
+A `ProtocolDriver` for BACnet/IP (scheme `bacnet`) — the dominant protocol for
+building automation (HVAC, chillers, lighting, metering, BMS). Where Modbus/OPC UA
+run the factory floor, BACnet runs the building:
+
+- **`fetch`** — read a property (default `present-value`) of an object
+  (`analog-value,1`, `binary-value,3`, …) → `{object, property, value}`.
+- **`write`** — write a property (set a setpoint, command a relay) — the hands.
+- **`sense`** — delta-poll the object's value and emit a `modality="data"` event
+  on each change. (COV subscriptions are a possible future enhancement; polling
+  is the robust, universally-supported path.)
+
+`bacnet://host[:port]` URLs (target device, default port 47808); the client binds
+its own local BACnet/IP port via `transport_meta['local_address']`. Requires the
+`bacnet` extra (`bacpypes3`), imported function-locally. `discovery_method="bacnet"`
+added to `APISchema` (the literal guard covers it). **Verified live end-to-end**
+against an in-process bacpypes3 server (read → write → read-back → poll-sense).
+
 ## [0.64.0] - 2026-06-01
 
 ### Added — ADB transport driver (Android devices as senses & hands)
