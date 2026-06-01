@@ -2,6 +2,18 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.66.1] - 2026-06-01
+
+### Fixed — README / launch hygiene (no behavior change)
+- Removed links to packages that don't exist on PyPI (`liquid-langchain`,
+  `liquid-crewai`, `liquid-cli`) — they 404'd. Framework integration is built into
+  `liquid-api` via `to_tools()` (Anthropic / OpenAI / MCP); no extra package.
+- Synced stale capability enumerations (MCP `liquid_sense` description, README
+  architecture diagram, pyproject keywords) with the current driver set
+  (MQTT / Modbus / OPC UA / BACnet / ADB).
+- De-emphasized the hosted offering on the public README (it stays documented in
+  `docs/OSS-VS-CLOUD.md`); added the new driver extras to the install list.
+
 ## [0.66.0] - 2026-06-01
 
 ### Fixed — framework tools now expose `sense`

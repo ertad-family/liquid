@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.66.0"
+version = "0.66.1"
 description = "Connect your AI agent to anything — no connector to write or maintain. One fetch/query/write/sense API over web APIs, databases, agents, IoT, and industrial/OT (Modbus/OPC UA/BACnet)."
 readme = "README.md"
 license = "AGPL-3.0-only"
