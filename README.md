@@ -392,6 +392,11 @@ fetched from the network as JSON, connects without a release. New protocols
 otherwise plug in via the `liquid.transport.ProtocolDriver` protocol; SQL backends
 share a dialect-aware core, so a new one is a ~80-line adapter.
 
+**Want to teach Liquid a new protocol?** A complete transport driver
+(`fetch`/`write`/`sense`) is typically ~150 lines — see
+[docs/ADDING_A_DRIVER.md](docs/ADDING_A_DRIVER.md) for the walkthrough and a
+wishlist (CAN bus, CoAP, KNX, AMQP, NATS, SNMP, …). Contributions welcome.
+
 2,500+ APIs are pre-discovered and pre-mapped in the
 [global catalog](https://liquid.ertad.family/catalog) — most popular services
 connect with zero discovery cost.
