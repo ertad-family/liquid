@@ -2,6 +2,18 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.66.0] - 2026-06-01
+
+### Fixed — framework tools now expose `sense`
+`adapter_to_tools()` / `Adapter.to_tools()` (the tool surface for LangChain /
+OpenAI / Anthropic) had drifted: it emitted fetch / search / write tools but no
+`sense` tool, so framework agents couldn't perceive live events even though the
+MCP server already exposed `liquid_sense`. It now emits a `sense_<resource>` tool
+for sense-capable endpoints (SQL tables, Redis, MQTT, WebSocket/SSE, OPC UA, …) —
+drain-by-pull schema (`cursor` / `max_events` / `max_seconds`), parity with the
+MCP tool. Plain request/response protocols get no sense tool. A guard test keeps
+the framework tool surface and the capability set from diverging again.
+
 ## [0.65.0] - 2026-06-01
 
 ### Added — BACnet transport driver (building automation as senses & hands)

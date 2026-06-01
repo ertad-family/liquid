@@ -264,3 +264,47 @@ class TestBuildArgsModel:
             model()  # missing limit
         instance = model(limit=10)
         assert instance.limit == 10
+
+
+class TestSenseTool:
+    """sense() is a first-class capability — adapter_to_tools must expose it for
+    sense-capable endpoints (parity with the MCP liquid_sense tool), and must NOT
+    invent one for plain request/response protocols."""
+
+    @staticmethod
+    def _config(protocol: str) -> AdapterConfig:
+        ep = Endpoint(
+            path="/events",
+            method="GET",
+            protocol=protocol,
+            kind=EndpointKind.READ,
+            description="events",
+        )
+        schema = APISchema(
+            source_url="x://h",
+            service_name="svc",
+            discovery_method="mqtt" if protocol == "mqtt" else "rest_heuristic",
+            endpoints=[ep],
+            auth=AuthRequirement(type="custom", tier="A"),
+        )
+        return AdapterConfig(schema=schema, auth_ref="none", mappings=[], sync=SyncConfig(endpoints=["/events"]))
+
+    def _names(self, tools: list[dict]) -> list[str]:
+        return [(t.get("name") or t.get("function", {}).get("name")) for t in tools]
+
+    def test_sense_tool_emitted_for_sense_capable(self):
+        for proto in ("mqtt", "sqlite", "redis", "sse"):
+            for fmt in ("anthropic", "openai"):
+                names = self._names(adapter_to_tools(self._config(proto), format=fmt))
+                assert "sense_events" in names, f"{proto}/{fmt} missing sense tool"
+
+    def test_no_sense_tool_for_plain_http(self):
+        names = self._names(adapter_to_tools(self._config("http"), format="anthropic"))
+        assert "list_events" in names
+        assert not any(n.startswith("sense_") for n in names)
+
+    def test_sense_tool_schema_has_cursor_bounds(self):
+        tools = adapter_to_tools(self._config("mqtt"), format="anthropic")
+        sense = next(t for t in tools if t["name"] == "sense_events")
+        props = sense["input_schema"]["properties"]
+        assert {"cursor", "max_events", "max_seconds"} <= set(props)
