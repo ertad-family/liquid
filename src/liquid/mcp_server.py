@@ -365,7 +365,7 @@ def _tool_definitions(allow_writes: bool = False) -> list:
                 "it always returns promptly. Where liquid_fetch is a one-shot pull of current state, liquid_sense "
                 "perceives what changed since last check. Requires an adapter_id from liquid_connect. Only "
                 "sense-capable endpoints support it (SQL tables, Redis channels, WebSocket, SSE/NDJSON streams, "
-                "MCP notifications); others return an error. "
+                "MCP notifications, MQTT, Modbus, OPC UA, BACnet, ADB logcat); others return an error. "
                 "Read-only — it perceives, it does not change anything."
             ),
             annotations=ToolAnnotations(

@@ -411,8 +411,9 @@ URL / DSN                       Agent
    ↓                              ↑
  one ProtocolDriver per          Deterministic per-protocol transport
  interface:                        • Query DSL (server-side filter)
-   REST GraphQL SOAP gRPC WS       • Output normalization
-   MCP A2A · SQL graph doc KV      • Verbosity / max_tokens / _meta
+   REST GraphQL gRPC WS SSE MQTT   • Output normalization
+   MCP A2A · SQL graph doc KV ·    • Verbosity / max_tokens / _meta
+   Modbus OPC-UA BACnet ADB …      • (full protocol list in the table above)
    ↓                              • Structured recovery + self-heal
  APISchema                        • Rate-limit-aware token bucket
    ↓                              • Response cache (Cache-Control aware)
