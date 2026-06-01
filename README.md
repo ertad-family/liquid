@@ -189,9 +189,11 @@ pip install 'liquid-api[duckdb]'     # DuckDB (embedded analytics)
 pip install 'liquid-api[mssql]'      # SQL Server (ODBC; needs a system ODBC driver)
 pip install 'liquid-api[mongodb]'    # MongoDB (collections as endpoints)
 pip install 'liquid-api[redis]'      # Redis (keyspace namespaces as endpoints)
-# Framework integrations
-pip install liquid-langchain   # LangChain / LangGraph
-pip install liquid-crewai      # CrewAI
+pip install 'liquid-api[mqtt]'       # MQTT (IoT pub/sub)
+pip install 'liquid-api[modbus]'     # Modbus (industrial registers)
+pip install 'liquid-api[opcua]'      # OPC UA (Industry-4.0 nodes + subscriptions)
+pip install 'liquid-api[bacnet]'     # BACnet (building automation; ADB needs the system `adb` binary)
+# Framework integration (LangChain / OpenAI / Anthropic / MCP) is built in — no extra package.
 ```
 
 The core is dependency-free — every backend's library is an optional extra,
@@ -443,20 +445,18 @@ In-memory implementations ship for all of them; `liquid-cloud` provides
 
 ```python
 adapter.to_tools(format="anthropic")   # Claude tool use
-adapter.to_tools(format="openai")      # OpenAI function calling
+adapter.to_tools(format="openai")      # OpenAI function calling (LangChain/CrewAI consume these)
 adapter.to_tools(format="mcp")         # MCP (Claude Desktop, Cursor)
-from liquid_crewai import LiquidCrewToolkit  # CrewAI
 ```
 
-## Ecosystem
+## Framework integration
 
-| Package | Purpose |
-|---|---|
-| [`liquid-api`](https://pypi.org/project/liquid-api/) | Core library (this repo) |
-| [`liquid-langchain`](https://pypi.org/project/liquid-langchain/) | LangChain / LangGraph integration |
-| [`liquid-crewai`](https://pypi.org/project/liquid-crewai/) | CrewAI integration |
-| [`liquid-cli`](https://pypi.org/project/liquid-cli/) | `liquid init` quickstart |
-| [Liquid Cloud](https://liquid.ertad.family) | Hosted service + global catalog + empirical probing |
+No extra packages to install — it's built into `liquid-api`.
+`adapter.to_tools(format="anthropic" | "openai" | "mcp")` emits ready-to-use tool
+definitions for Claude tool use, OpenAI function calling (which LangChain /
+LangGraph and CrewAI consume directly), and any MCP client (Claude Desktop,
+Cursor, …). The bundled `liquid-mcp` server also exposes Liquid as MCP tools out
+of the box.
 
 ## Comparison
 
