@@ -1,7 +1,7 @@
 [project]
 name = "liquid-api"
 version = "0.65.0"
-description = "Connect your AI agent to anything — APIs, databases, and agents; read, write, and sense."
+description = "Give your AI agent senses and hands — connect it to web APIs, databases, agents, IoT, smart home, and industrial/OT (Modbus/OPC UA/BACnet); read, write, and sense."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"

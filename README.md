@@ -1,11 +1,13 @@
 # Liquid
 
-**Connect your AI agent to anything.**
+**Give your AI agent senses and hands — for everything from a REST API to the factory floor.**
 
-APIs, databases, and other agents — discovered automatically, read and write,
-through one stable, token-efficient, self-healing interface. No per-service
-connector to write or maintain: Liquid learns each one, and re-learns it when it
-changes.
+One small, stable API — `fetch` · `query` · `write` · `sense` — connects an agent
+to almost anything: web APIs, databases, other agents, smart homes, cars, phones,
+IoT brokers, even industrial PLCs and building systems. An LLM learns each
+interface **once**; after that the runtime is deterministic (no model in the
+loop), token-efficient, and **self-healing** when the upstream drifts. No
+per-service connector to write or maintain.
 
 [![PyPI](https://img.shields.io/pypi/v/liquid-api.svg)](https://pypi.org/project/liquid-api/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/ertad-family/liquid/blob/main/LICENSE)
