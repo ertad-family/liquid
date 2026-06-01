@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from liquid.transport.a2a import A2ADriver
 from liquid.transport.adb_driver import ADBDriver
+from liquid.transport.bacnet_driver import BACnetDriver
 from liquid.transport.base import (
     DriverResponse,
     FetchContext,
@@ -62,10 +63,12 @@ register_driver(MQTTDriver())
 register_driver(ModbusDriver())
 register_driver(OPCUADriver())
 register_driver(ADBDriver())
+register_driver(BACnetDriver())
 
 __all__ = [
     "A2ADriver",
     "ADBDriver",
+    "BACnetDriver",
     "DriverResponse",
     "DuckDBDriver",
     "FetchContext",

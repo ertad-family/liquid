@@ -127,6 +127,7 @@ class APISchema(BaseModel):
         "modbus",
         "opcua",
         "adb",
+        "bacnet",
         "manifest",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)

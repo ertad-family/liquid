@@ -1,6 +1,6 @@
 [project]
 name = "liquid-api"
-version = "0.64.0"
+version = "0.65.0"
 description = "Connect your AI agent to anything — APIs, databases, and agents; read, write, and sense."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -108,6 +108,10 @@ modbus = [
 opcua = [
     # OPC UA-as-an-interface: Industry-4.0 node read/write + native subscriptions.
     "asyncua>=1.0",
+]
+bacnet = [
+    # BACnet-as-an-interface: building automation (HVAC/BMS) object read/write.
+    "bacpypes3>=0.0.100",
 ]
 dev = [
     "pytest>=8.0",

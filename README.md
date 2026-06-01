@@ -23,7 +23,8 @@ doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 - **Web APIs & messaging** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket,
   SSE/NDJSON streams, MQTT (IoT pub/sub — subscribe to sense, publish to act)
 - **Industrial / OT** — Modbus (PLCs, sensors) and OPC UA (Industry-4.0 nodes,
-  native subscriptions) — read, write, and sense the factory floor
+  native subscriptions) for the factory floor; BACnet for buildings (HVAC/BMS) —
+  read, write, and sense
 - **Android devices** — phones, TV boxes, kiosks via ADB: sense `logcat`, read
   `shell`, act with `input`/`am`
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
@@ -333,6 +334,7 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | MQTT (IoT pub/sub) | ✅ subscribe → batch + live `sense` | ✅ publish | `liquid-api[mqtt]` |
 | Modbus (industrial) | ✅ register/coil read + delta-poll `sense` | ✅ register/coil write | `liquid-api[modbus]` |
 | OPC UA (industrial) | ✅ node read + native-subscription `sense` | ✅ node write | `liquid-api[opcua]` |
+| BACnet (buildings) | ✅ object property read + delta-poll `sense` | ✅ property write | `liquid-api[bacnet]` |
 | ADB (Android) | ✅ shell read + logcat `sense` | ✅ shell actions (input/am) | — (system `adb`) |
 
 **Read and write.** `liquid.write(adapter, endpoint, op="insert", values={...},
