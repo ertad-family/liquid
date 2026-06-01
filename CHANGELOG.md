@@ -2,6 +2,29 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.64.0] - 2026-06-01
+
+### Added — ADB transport driver (Android devices as senses & hands)
+A `ProtocolDriver` for the Android Debug Bridge (scheme `adb`) — reaches phones,
+tablets, Android TV boxes, kiosks and embedded HMIs through one driver:
+
+- **`sense`** — streams `adb logcat -v threadtime` and yields each line as a
+  `modality="message"` `SenseEvent`, parsed into `level` / `tag` / `message` /
+  `pid` (raw `line` always present). A live device event stream; optional
+  `filter` (e.g. `"ActivityManager:I *:S"`).
+- **`fetch`** — runs a shell command (`getprop`, `dumpsys battery`, …) and
+  returns its output lines as records.
+- **`write`** — runs a shell *action* (`input tap 100 200`, `am start -n …`,
+  `input text …`) — the hands.
+
+`adb://[serial]` URLs — a device id (`emulator-5554`) or a network `host:port`
+(`adb://192.168.1.5:5555`, auto-`adb connect`); `adb://` targets the single
+attached device. `ADBDiscovery` confirms a device via `adb devices`. Shells out
+to the system `adb` binary (no Python dependency — like the SQL Server driver
+needs a system ODBC driver); `adb` must be on `PATH`. `discovery_method="adb"`
+added to `APISchema` (the literal guard covers it). Verified end-to-end against a
+fake `adb` on PATH (shell read, shell action, logcat stream).
+
 ## [0.63.0] - 2026-05-30
 
 ### Added — industrial drivers: Modbus + OPC UA (the factory floor as senses & hands)

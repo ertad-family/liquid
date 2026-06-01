@@ -10,6 +10,7 @@ import httpx
 from liquid.auth.classifier import AuthClassifier, EscalationInfo
 from liquid.auth.manager import AuthManager
 from liquid.discovery.a2a import A2ADiscovery
+from liquid.discovery.adb import ADBDiscovery
 from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
 from liquid.discovery.diff import diff_schemas
@@ -373,6 +374,7 @@ class Liquid:
                     MQTTDiscovery(),
                     ModbusDiscovery(),
                     OPCUADiscovery(),
+                    ADBDiscovery(),
                     # User-registered SQL backends defined as data (dialect manifests).
                     ManifestDiscovery(),
                     GRPCDiscovery(),
