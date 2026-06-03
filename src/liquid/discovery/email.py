@@ -16,7 +16,7 @@ import asyncio
 import contextlib
 import imaplib
 import logging
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from liquid.exceptions import DiscoveryError, Recovery
 from liquid.models.schema import APISchema, AuthRequirement, Endpoint, EndpointKind
@@ -56,13 +56,52 @@ _SEND_SCHEMA = {
 }
 
 
+_GMAIL_SCHEMES = ("gmail://",)
+_GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
+
+
 class EmailDiscovery:
     async def discover(self, url: str) -> APISchema | None:
+        if is_dsn(url, _GMAIL_SCHEMES):
+            return self._discover_gmail(url)
         if is_dsn(url, IMAP_SCHEMES):
             return await self._discover_imap(url)
         if is_dsn(url, SMTP_SCHEMES):
             return self._discover_smtp(url)
         return None
+
+    def _discover_gmail(self, url: str) -> APISchema:
+        # Provider API: read/send/sense over HTTP + OAuth2. Nothing to introspect
+        # live (no token at discovery time) — synthesize the standard endpoints.
+        user = _gmail_user(url)
+        meta = {"user": user}
+        endpoints = [
+            Endpoint(
+                path="/messages",
+                method="GET",
+                protocol="gmail",
+                kind=EndpointKind.READ,
+                description="Gmail messages — list/read and perceive newly-arrived mail.",
+                response_schema=_MESSAGE_SCHEMA,
+                transport_meta={"kind": "messages", **meta},
+            ),
+            Endpoint(
+                path="/messages/send",
+                method="POST",
+                protocol="gmail",
+                kind=EndpointKind.WRITE,
+                description="Send an email via the Gmail API.",
+                request_schema=_SEND_SCHEMA,
+                transport_meta={"kind": "send", **meta},
+            ),
+        ]
+        return APISchema(
+            source_url=_GMAIL_API,
+            service_name=f"gmail-{user}" if user else "gmail",
+            discovery_method="email",
+            endpoints=endpoints,
+            auth=AuthRequirement(type="oauth2", tier="A"),
+        )
 
     async def _discover_imap(self, url: str) -> APISchema:
         dsn = parse_imap_dsn(url)
@@ -165,3 +204,13 @@ def _outbox_endpoint() -> Endpoint:
 def _service_name(url: str, kind: str) -> str:
     host = urlsplit(url).hostname or kind
     return f"{kind}-{host}"
+
+
+def _gmail_user(url: str) -> str:
+    """Best-effort email from a ``gmail://`` DSN (``gmail://me@gmail.com`` etc.)."""
+    parts = urlsplit(url)
+    user = unquote(parts.username or "")
+    host = parts.hostname or ""
+    if user and host:
+        return f"{user}@{host}"
+    return user or host

@@ -25,6 +25,7 @@ from liquid.transport.base import (
     supports_write,
 )
 from liquid.transport.duckdb_driver import DuckDBDriver
+from liquid.transport.gmail_driver import GmailDriver
 from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.grpc_driver import GRPCDriver
 from liquid.transport.http import HTTPDriver
@@ -68,6 +69,7 @@ register_driver(ADBDriver())
 register_driver(BACnetDriver())
 register_driver(IMAPDriver())
 register_driver(SMTPDriver())
+register_driver(GmailDriver())
 
 __all__ = [
     "A2ADriver",
@@ -77,6 +79,7 @@ __all__ = [
     "DuckDBDriver",
     "FetchContext",
     "GRPCDriver",
+    "GmailDriver",
     "GraphQLDriver",
     "HTTPDriver",
     "IMAPDriver",
