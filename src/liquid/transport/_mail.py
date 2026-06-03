@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlsplit
 
-from liquid.transport._sql import resolve_dsn
+from liquid.auth.oauth2 import OAuth2TokenProvider
+from liquid.transport._sql import is_dsn, resolve_dsn
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -85,11 +86,62 @@ def parse_smtp_dsn(url: str) -> MailDSN:
     )
 
 
-async def resolve_mail_dsn(ctx: FetchContext, schemes: Sequence[str]) -> MailDSN:
-    """Resolve the connection string from the vault, then parse it.
+@dataclass(slots=True)
+class MailAuth:
+    """How to authenticate a mail socket: a password, or an OAuth2 bearer.
 
-    Works for every context type (fetch / sense / write) since
-    :func:`resolve_dsn` only reads ``vault`` / ``auth_ref`` / ``base_url``.
+    ``mode`` is ``"basic"`` (app-password / login) or ``"xoauth2"`` (SASL
+    ``XOAUTH2`` with a Bearer access token). For ``xoauth2`` the ``provider`` lets
+    the driver refresh the token once on an auth failure and retry, mirroring the
+    HTTP flow's reactive refresh.
     """
+
+    mode: str
+    username: str
+    secret: str
+    provider: OAuth2TokenProvider | None = None
+
+
+def _parse(schemes: Sequence[str], url: str) -> MailDSN:
+    return parse_imap_dsn(url) if schemes is IMAP_SCHEMES else parse_smtp_dsn(url)
+
+
+async def resolve_mail_auth(ctx: FetchContext, schemes: Sequence[str]) -> tuple[MailDSN, MailAuth]:
+    """Resolve both the connection target and how to authenticate to it.
+
+    When the context carries an OAuth2 ``auth_scheme`` (the same scheme the HTTP
+    transport uses), authenticate with ``XOAUTH2`` using a token from the vault —
+    the host / user / TLS mode come from the persisted (password-less) DSN.
+    Otherwise fall back to password auth via :func:`resolve_dsn` (vault secret).
+
+    Works for every context type (fetch / sense / write): all expose ``vault`` /
+    ``auth_ref`` / ``base_url``, and ``auth_scheme`` defaults to ``None``.
+    """
+    scheme = getattr(ctx, "auth_scheme", None)
+    if scheme is not None and getattr(scheme, "kind", None) == "oauth2":
+        base = ctx.base_url or ""
+        dsn = _parse(schemes, base) if is_dsn(base, schemes) else MailDSN("", 0, "", "", True, False)
+        provider = OAuth2TokenProvider(ctx.vault, ctx.auth_ref, scheme)
+        token = await provider.access_token()
+        if token is None:
+            token = await provider.refresh() or ""
+        return dsn, MailAuth("xoauth2", dsn.username, token, provider)
+
     raw = await resolve_dsn(ctx, schemes)
-    return parse_imap_dsn(raw) if schemes is IMAP_SCHEMES else parse_smtp_dsn(raw)
+    dsn = _parse(schemes, raw)
+    return dsn, MailAuth("basic", dsn.username, dsn.password)
+
+
+def xoauth2_string(username: str, access_token: str) -> str:
+    """Build the SASL ``XOAUTH2`` initial-response string (pre-base64).
+
+    Format per Google/Microsoft: ``user=<addr>^Aauth=Bearer <token>^A^A`` where
+    ``^A`` is a 0x01 byte. The IMAP / SMTP libraries base64-encode it themselves.
+    """
+    return f"user={username}\x01auth=Bearer {access_token}\x01\x01"
+
+
+async def resolve_mail_dsn(ctx: FetchContext, schemes: Sequence[str]) -> MailDSN:
+    """Resolve just the connection string from the vault (password auth)."""
+    raw = await resolve_dsn(ctx, schemes)
+    return _parse(schemes, raw)

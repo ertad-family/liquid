@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from typing import Any
 
-from liquid.transport._mail import SMTP_SCHEMES, MailDSN, resolve_mail_dsn
+from liquid.transport._mail import SMTP_SCHEMES, MailAuth, MailDSN, resolve_mail_auth, xoauth2_string
 from liquid.transport.base import DriverResponse, FetchContext, WriteContext
 
 logger = logging.getLogger(__name__)
@@ -38,17 +38,17 @@ class SMTPDriver:
         if ctx.op != "insert":
             return DriverResponse(status_code=400, error_body=f"unsupported op {ctx.op!r}; send is 'insert'")
         try:
-            dsn = await resolve_mail_dsn(ctx, SMTP_SCHEMES)
+            dsn, auth = await resolve_mail_auth(ctx, SMTP_SCHEMES)
         except Exception:
             return DriverResponse(status_code=503, error_body="no SMTP DSN")
 
         try:
-            msg, recipients = build_message(ctx.values or {}, default_from=dsn.username)
+            msg, recipients = build_message(ctx.values or {}, default_from=auth.username)
         except ValueError as e:
             return DriverResponse(status_code=400, error_body=str(e))
 
         try:
-            await asyncio.to_thread(_send_sync, dsn, msg, recipients)
+            await _send_with_refresh(dsn, auth, msg, recipients)
         except Exception as e:
             return _map_smtp_error(e)
 
@@ -105,7 +105,22 @@ def _as_list(raw: Any) -> list[str]:
 # --- blocking smtplib core (runs in a worker thread) ----------------------
 
 
-def _send_sync(dsn: MailDSN, msg: EmailMessage, recipients: list[str]) -> None:
+async def _send_with_refresh(dsn: MailDSN, auth: MailAuth, msg: EmailMessage, recipients: list[str]) -> None:
+    """Send the message; on an OAuth2 auth failure, refresh the token once and retry."""
+    try:
+        await asyncio.to_thread(_send_sync, dsn, auth, msg, recipients)
+    except smtplib.SMTPAuthenticationError:
+        if auth.provider is None:
+            raise
+        new_token = await auth.provider.refresh()
+        if not new_token:
+            raise
+        auth.secret = new_token
+        logger.debug("SMTP XOAUTH2 token refreshed after auth failure")
+        await asyncio.to_thread(_send_sync, dsn, auth, msg, recipients)
+
+
+def _send_sync(dsn: MailDSN, auth: MailAuth, msg: EmailMessage, recipients: list[str]) -> None:
     server: smtplib.SMTP
     if dsn.use_ssl:
         server = smtplib.SMTP_SSL(dsn.host, dsn.port)
@@ -114,8 +129,11 @@ def _send_sync(dsn: MailDSN, msg: EmailMessage, recipients: list[str]) -> None:
         if dsn.use_starttls:
             server.starttls()
     try:
-        if dsn.username:
-            server.login(dsn.username, dsn.password)
+        server.ehlo()
+        if auth.mode == "xoauth2":
+            server.auth("XOAUTH2", lambda _=None: xoauth2_string(auth.username, auth.secret))
+        elif auth.username:
+            server.login(auth.username, auth.secret)
         server.send_message(msg, from_addr=msg["From"], to_addrs=recipients)
     finally:
         try:

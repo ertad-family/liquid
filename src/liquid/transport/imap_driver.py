@@ -28,7 +28,7 @@ from email import message_from_bytes
 from email.policy import default as _email_policy
 from typing import TYPE_CHECKING, Any
 
-from liquid.transport._mail import IMAP_SCHEMES, MailDSN, resolve_mail_dsn
+from liquid.transport._mail import IMAP_SCHEMES, MailAuth, MailDSN, resolve_mail_auth, xoauth2_string
 from liquid.transport._sql import coerce_limit
 from liquid.transport.base import DriverResponse, FetchContext, SenseContext, SenseEvent
 
@@ -44,7 +44,7 @@ class IMAPDriver:
 
     async def fetch(self, ctx: FetchContext) -> DriverResponse:
         try:
-            dsn = await resolve_mail_dsn(ctx, IMAP_SCHEMES)
+            dsn, auth = await resolve_mail_auth(ctx, IMAP_SCHEMES)
         except Exception:
             return DriverResponse(status_code=503, error_body="no IMAP DSN")
 
@@ -55,7 +55,7 @@ class IMAPDriver:
         since_uid = _coerce_uid_cursor(ctx.cursor)
 
         try:
-            records, last_uid = await asyncio.to_thread(_search_fetch_sync, dsn, mailbox, since_uid, limit)
+            records, last_uid = await _fetch_with_refresh(dsn, auth, mailbox, since_uid, limit)
         except Exception as e:
             return _map_imap_error(e)
 
@@ -71,7 +71,7 @@ class IMAPDriver:
         ``max_seconds`` so it never blocks forever.
         """
         try:
-            dsn = await resolve_mail_dsn(ctx, IMAP_SCHEMES)
+            dsn, auth = await resolve_mail_auth(ctx, IMAP_SCHEMES)
         except Exception:
             return
         meta = ctx.endpoint.transport_meta or {}
@@ -83,7 +83,7 @@ class IMAPDriver:
         deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
         while True:
             try:
-                records, _ = await asyncio.to_thread(_search_fetch_sync, dsn, mailbox, last, _SENSE_BATCH)
+                records, _ = await _fetch_with_refresh(dsn, auth, mailbox, last, _SENSE_BATCH)
             except Exception:
                 logger.debug("IMAP sense poll failed", exc_info=True)
                 return
@@ -117,29 +117,49 @@ def _coerce_uid_cursor(cursor: str | None) -> int:
         return 0
 
 
+async def _fetch_with_refresh(
+    dsn: MailDSN, auth: MailAuth, mailbox: str, since_uid: int, limit: int
+) -> tuple[list[dict[str, Any]], int | None]:
+    """Run the blocking search/fetch; on an OAuth2 auth failure, refresh once and retry."""
+    try:
+        return await asyncio.to_thread(_search_fetch_sync, dsn, auth, mailbox, since_uid, limit)
+    except imaplib.IMAP4.error as e:
+        if auth.provider is None:
+            raise
+        new_token = await auth.provider.refresh()
+        if not new_token:
+            raise
+        auth.secret = new_token
+        logger.debug("IMAP XOAUTH2 token refreshed after auth failure: %s", e)
+        return await asyncio.to_thread(_search_fetch_sync, dsn, auth, mailbox, since_uid, limit)
+
+
 # --- blocking imaplib core (runs in a worker thread) ----------------------
 
 
-def _connect(dsn: MailDSN) -> imaplib.IMAP4:
+def _connect(dsn: MailDSN, auth: MailAuth) -> imaplib.IMAP4:
     if dsn.use_ssl:
         client: imaplib.IMAP4 = imaplib.IMAP4_SSL(dsn.host, dsn.port)
     else:
         client = imaplib.IMAP4(dsn.host, dsn.port)
         if dsn.use_starttls:
             client.starttls()
-    client.login(dsn.username, dsn.password)
+    if auth.mode == "xoauth2":
+        client.authenticate("XOAUTH2", lambda _: xoauth2_string(auth.username, auth.secret).encode())
+    else:
+        client.login(auth.username, auth.secret)
     return client
 
 
 def _search_fetch_sync(
-    dsn: MailDSN, mailbox: str, since_uid: int, limit: int
+    dsn: MailDSN, auth: MailAuth, mailbox: str, since_uid: int, limit: int
 ) -> tuple[list[dict[str, Any]], int | None]:
     """Select ``mailbox``, fetch up to ``limit`` messages with ``UID > since_uid``.
 
     Returns the records (oldest-first) and the highest UID seen (the next cursor),
     or ``None`` when nothing new arrived.
     """
-    client = _connect(dsn)
+    client = _connect(dsn, auth)
     try:
         client.select(mailbox, readonly=True)
         # `UID n:*` always returns at least the highest UID even when none exceed
