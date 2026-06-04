@@ -6,8 +6,8 @@ Point Liquid at a URL or a database and it works out the interface for you:
 discovers its shape, maps it to the fields you asked for, and handles auth,
 pagination and normalization — typed records, no client code. When the upstream
 drifts, it re-maps and keeps going. The same small API — `fetch` · `query` ·
-`write` · `sense` — reaches web APIs, databases, other agents (MCP/A2A), and even
-IoT and industrial systems (MQTT, Modbus, OPC UA, BACnet). An LLM does the
+`write` · `sense` — reaches web APIs, databases, other agents (MCP/A2A), email,
+and even IoT and industrial systems (MQTT, Modbus, OPC UA, BACnet). An LLM does the
 learning at setup (and on drift); the data path itself makes no model call.
 
 [![PyPI](https://img.shields.io/pypi/v/liquid-api.svg)](https://pypi.org/project/liquid-api/)
@@ -25,6 +25,8 @@ doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 
 - **Web APIs & messaging** — REST/JSON, GraphQL, SOAP/WSDL, gRPC, WebSocket,
   SSE/NDJSON streams, MQTT (IoT pub/sub — subscribe to sense, publish to act)
+- **Email** — IMAP/SMTP (any provider, app-password or OAuth2 `XOAUTH2`) and the
+  Gmail API (OAuth2): read a mailbox, `sense` new mail as it arrives, and send
 - **Industrial / OT** — Modbus (PLCs, sensors) and OPC UA (Industry-4.0 nodes,
   native subscriptions) for the factory floor; BACnet for buildings (HVAC/BMS) —
   read, write, and sense
@@ -341,6 +343,8 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | OPC UA (industrial) | ✅ node read + native-subscription `sense` | ✅ node write | `liquid-api[opcua]` |
 | BACnet (buildings) | ✅ object property read + delta-poll `sense` | ✅ property write | `liquid-api[bacnet]` |
 | ADB (Android) | ✅ shell read + logcat `sense` | ✅ shell actions (input/am) | — (system `adb`) |
+| Email — IMAP/SMTP | ✅ read mailbox by UID + new-mail `sense` | ✅ send (MIME) | — (stdlib) |
+| Email — Gmail API | ✅ list/get + `history` `sense` | ✅ `messages.send` | — (OAuth2) |
 
 **Read and write.** `liquid.write(adapter, endpoint, op="insert", values={...},
 allow_write=True)` mutates any database (SQL `INSERT`/`UPDATE`/`DELETE`, Mongo

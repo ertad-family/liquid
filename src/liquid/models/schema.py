@@ -128,6 +128,7 @@ class APISchema(BaseModel):
         "opcua",
         "adb",
         "bacnet",
+        "email",
         "manifest",
     ]
     endpoints: list[Endpoint] = Field(default_factory=list)

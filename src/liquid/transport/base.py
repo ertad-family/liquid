@@ -98,6 +98,7 @@ class WriteContext:
     vault: Vault
     auth_ref: str
     auth: httpx.Auth | None = None
+    auth_scheme: AuthScheme | None = None
     http_client: httpx.AsyncClient | None = None
     idempotency_key: str | None = None
 
@@ -141,6 +142,7 @@ class SenseContext:
     max_events: int | None = None
     max_seconds: float | None = None
     auth: httpx.Auth | None = None
+    auth_scheme: AuthScheme | None = None
     http_client: httpx.AsyncClient | None = None
 
 

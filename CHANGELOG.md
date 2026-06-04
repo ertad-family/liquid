@@ -2,6 +2,36 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [0.67.0] - 2026-06-04
+
+### Added — Email adapter (an agent's mail senses & hands)
+Mail joins the modality set: an agent can now read a mailbox, perceive new mail as
+it arrives, and send — over raw IMAP/SMTP or the Gmail API. Built in three layers:
+
+- **Raw IMAP/SMTP — no new dependency.** `IMAPDriver` (scheme `imap`): `fetch`
+  reads a mailbox by UID cursor; `sense` delta-polls for new mail (`UID > cursor`,
+  `modality="message"`). `SMTPDriver` (scheme `smtp`): `write` composes a MIME
+  message (`to`/`cc`/`bcc`/`html`/`reply_to`) and sends it. Both run the stdlib
+  `imaplib`/`smtplib` inside `asyncio.to_thread`, so the event loop never blocks
+  and password / app-password auth needs nothing extra. `EmailDiscovery` turns an
+  `imap://` DSN into a read+sense endpoint per mailbox and an `smtp://` DSN into an
+  `/outbox` send endpoint (`discovery_method="email"`).
+- **OAuth2 (`XOAUTH2`).** A reusable `OAuth2TokenProvider` (`liquid.auth.oauth2`),
+  factored out of the HTTP auth flow, lets the mail sockets reuse the exact refresh
+  + vault-storage semantics outside httpx. The IMAP/SMTP drivers authenticate with
+  the `XOAUTH2` SASL mechanism and refresh the token once on an auth failure. (This
+  also threaded `auth_scheme` into `WriteContext` / `SenseContext`, mirroring
+  `FetchContext`, so any non-HTTP driver can see a scheme on write/sense.)
+- **Gmail REST.** `GmailDriver` (scheme `gmail`): `fetch` lists + hydrates messages,
+  `write` posts a base64url MIME to `messages.send`, `sense` delta-polls
+  `history.list` from a `historyId` cursor — riding the shared httpx client and the
+  OAuth2 `httpx.Auth` the Fetcher already builds (401 refresh for free). A
+  `gmail://me@host` DSN discovers `/messages` (read+sense) and `/messages/send`
+  (write) with `oauth2` / tier-A auth.
+
+Surface parity holds automatically: mail read endpoints emit `list_` / `sense_`
+tools via `to_tools()`, and send surfaces through `liquid_execute`.
+
 ## [0.66.1] - 2026-06-01
 
 ### Fixed — README / launch hygiene (no behavior change)

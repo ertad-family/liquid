@@ -1,11 +1,11 @@
 [project]
 name = "liquid-api"
-version = "0.66.1"
+version = "0.67.0"
 description = "Connect your AI agent to anything — no connector to write or maintain. One fetch/query/write/sense API over web APIs, databases, agents, IoT, and industrial/OT (Modbus/OPC UA/BACnet)."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
-keywords = ["api", "discovery", "adapter", "openapi", "graphql", "mcp", "a2a", "llm", "ai", "agent", "agents", "tools", "sense", "postgres", "mysql", "sqlite", "sql", "neo4j", "graph", "duckdb", "mssql", "mongodb", "redis", "nosql", "database", "mqtt", "modbus", "opcua", "bacnet", "adb", "iot", "industrial", "scada"]
+keywords = ["api", "discovery", "adapter", "openapi", "graphql", "mcp", "a2a", "llm", "ai", "agent", "agents", "tools", "sense", "postgres", "mysql", "sqlite", "sql", "neo4j", "graph", "duckdb", "mssql", "mongodb", "redis", "nosql", "database", "mqtt", "modbus", "opcua", "bacnet", "adb", "iot", "industrial", "scada", "email", "imap", "smtp", "gmail"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

@@ -18,10 +18,12 @@ import hashlib
 import hmac
 import time
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
+
+from liquid.auth.oauth2 import OAuth2TokenProvider
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator
@@ -433,10 +435,9 @@ class _OAuth2RequestAuth(httpx.Auth):
     requires_response_body = True
 
     def __init__(self, vault: Vault, vault_key: str, access_token: str, cfg: OAuth2Auth) -> None:
-        self._vault = vault
-        self._vault_key = vault_key
         self._access = access_token
         self._cfg = cfg
+        self._provider = OAuth2TokenProvider(vault, vault_key, cfg)
 
     async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
         request.headers["Authorization"] = f"Bearer {self._access}"
@@ -452,34 +453,6 @@ class _OAuth2RequestAuth(httpx.Auth):
         yield request
 
     async def _refresh(self) -> str | None:
-        data: dict[str, str] = {"grant_type": self._cfg.grant_type}
-        if self._cfg.grant_type == "refresh_token":
-            data["refresh_token"] = await self._vault.get(f"{self._vault_key}/{self._cfg.refresh_token_field}")
-        if self._cfg.scope:
-            data["scope"] = self._cfg.scope
-        if self._cfg.audience:
-            data["audience"] = self._cfg.audience
-
-        client_id = await self._vault.get(f"{self._vault_key}/{self._cfg.client_id_field}")
-        client_secret = await self._vault.get(f"{self._vault_key}/{self._cfg.client_secret_field}")
-
-        headers: dict[str, str] = {"Content-Type": "application/x-www-form-urlencoded"}
-        if self._cfg.client_auth_method == "client_secret_basic":
-            encoded = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-            headers["Authorization"] = f"Basic {encoded}"
-        else:
-            data["client_id"] = client_id
-            data["client_secret"] = client_secret
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(self._cfg.token_url, content=urlencode(data).encode("ascii"), headers=headers)
-        if not resp.is_success:
-            return None
-        payload = resp.json()
-        access = payload.get("access_token")
-        if not access:
-            return None
-        await self._vault.store(f"{self._vault_key}/{self._cfg.access_token_field}", access)
-        if "refresh_token" in payload:
-            await self._vault.store(f"{self._vault_key}/{self._cfg.refresh_token_field}", payload["refresh_token"])
-        return access
+        # Delegates to the shared provider; kept as a method so it stays the
+        # seam tests stub and the XOAUTH2 transports reuse the same semantics.
+        return await self._provider.refresh()
