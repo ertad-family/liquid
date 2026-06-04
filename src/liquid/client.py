@@ -16,6 +16,7 @@ from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
 from liquid.discovery.diff import diff_schemas
 from liquid.discovery.duckdb import DuckDBDiscovery
+from liquid.discovery.email import EmailDiscovery
 from liquid.discovery.graphql import GraphQLDiscovery
 from liquid.discovery.grpc_reflect import GRPCDiscovery
 from liquid.discovery.manifest import ManifestDiscovery
@@ -372,6 +373,7 @@ class Liquid:
                     MSSQLDiscovery(),
                     MongoDBDiscovery(),
                     RedisDiscovery(),
+                    EmailDiscovery(),
                     MQTTDiscovery(),
                     ModbusDiscovery(),
                     OPCUADiscovery(),

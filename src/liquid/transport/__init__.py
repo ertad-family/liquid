@@ -25,9 +25,11 @@ from liquid.transport.base import (
     supports_write,
 )
 from liquid.transport.duckdb_driver import DuckDBDriver
+from liquid.transport.gmail_driver import GmailDriver
 from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.grpc_driver import GRPCDriver
 from liquid.transport.http import HTTPDriver
+from liquid.transport.imap_driver import IMAPDriver
 from liquid.transport.mcp_driver import MCPDriver
 from liquid.transport.modbus_driver import ModbusDriver
 from liquid.transport.mongodb import MongoDBDriver
@@ -38,6 +40,7 @@ from liquid.transport.neo4j_driver import Neo4jDriver
 from liquid.transport.opcua_driver import OPCUADriver
 from liquid.transport.postgres import PostgresDriver
 from liquid.transport.redis_driver import RedisDriver
+from liquid.transport.smtp_driver import SMTPDriver
 from liquid.transport.soap import SOAPDriver
 from liquid.transport.sqlite import SQLiteDriver
 from liquid.transport.sse import SSEDriver
@@ -64,6 +67,9 @@ register_driver(ModbusDriver())
 register_driver(OPCUADriver())
 register_driver(ADBDriver())
 register_driver(BACnetDriver())
+register_driver(IMAPDriver())
+register_driver(SMTPDriver())
+register_driver(GmailDriver())
 
 __all__ = [
     "A2ADriver",
@@ -73,8 +79,10 @@ __all__ = [
     "DuckDBDriver",
     "FetchContext",
     "GRPCDriver",
+    "GmailDriver",
     "GraphQLDriver",
     "HTTPDriver",
+    "IMAPDriver",
     "MCPDriver",
     "MQTTDriver",
     "MSSQLDriver",
@@ -86,6 +94,7 @@ __all__ = [
     "PostgresDriver",
     "ProtocolDriver",
     "RedisDriver",
+    "SMTPDriver",
     "SOAPDriver",
     "SQLiteDriver",
     "SSEDriver",

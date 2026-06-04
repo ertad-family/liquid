@@ -252,6 +252,7 @@ class Fetcher:
             vault=self.vault,
             auth_ref=auth_ref,
             auth=auth,
+            auth_scheme=auth_scheme,
             http_client=self.http_client,
             idempotency_key=idempotency_key,
         )
@@ -322,6 +323,7 @@ class Fetcher:
             max_events=max_events,
             max_seconds=max_seconds,
             auth=auth,
+            auth_scheme=auth_scheme,
             http_client=self.http_client,
         )
 
