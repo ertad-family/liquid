@@ -31,16 +31,29 @@ from liquid.transport._html import (
     normalize_schema,
     parse_html,
 )
-from liquid.transport.base import DriverResponse, FetchContext
+from liquid.transport.base import DriverResponse, FetchContext, SenseEvent
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     import httpx
+
+    from liquid.transport.base import SenseContext
 
 logger = logging.getLogger(__name__)
 
 # Cap concurrent detail-page fetches per grid so a 50-row feed doesn't open 50
 # sockets at once against one host.
 _DETAIL_CONCURRENCY = 8
+
+# Floor for the sense poll interval. Scraping a live site every couple of seconds
+# is abusive; perception of a feed/grid doesn't need sub-minute latency anyway, so
+# a too-eager caller interval is raised to this.
+_MIN_SENSE_INTERVAL = 15.0
+
+# Bound the per-stream seen-set so a long-running sense over a high-churn feed
+# can't grow memory without limit — feeds rotate, so old keys won't reappear.
+_SEEN_CAP = 10_000
 
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
@@ -91,6 +104,73 @@ class HTMLScrapeDriver:
             )
 
         return DriverResponse(status_code=200, records=records, next_cursor=None)
+
+    async def sense(self, ctx: SenseContext) -> AsyncIterator[SenseEvent]:
+        """Perceive new records as the grid updates — afferent delta-poll.
+
+        Unlike the SQL backends (which watch a monotonic key), a grid has no
+        ordering guarantee — new articles/products are prepended — so the
+        watermark here is record *identity* (the detail URL, else a content
+        hash). The first poll establishes a baseline and emits nothing; every
+        subsequent poll yields only records whose key wasn't seen before, with
+        their fields fully extracted (detail pages fetched for new items only).
+        So ``sense`` perceives *updates from now on*, not a backfill of the
+        current page. Each event is ``modality="data"``; its cursor is the
+        record key. The loop owns polling, bounds (``max_events`` /
+        ``max_seconds``) and politeness (interval floored to keep scraping civil).
+        """
+        assert ctx.http_client is not None, "html_scrape driver requires an http_client"
+        schema = normalize_schema(ctx.endpoint.transport_meta or {})
+        if not schema.link_selector and not schema.row_selector:
+            return
+
+        # Politeness floor — overridable per schema (a discovered grid knows its
+        # own cadence via cron_frequency and can opt into faster/slower polling).
+        floor = (ctx.endpoint.transport_meta or {}).get("min_poll_interval", _MIN_SENSE_INTERVAL)
+        interval = max(ctx.poll_interval, float(floor))
+        grid_url = f"{ctx.base_url.rstrip('/')}{ctx.endpoint.path}"
+        seen: set[str] = set()
+        baseline = True
+        emitted = 0
+        loop = asyncio.get_running_loop()
+        deadline = (loop.time() + ctx.max_seconds) if ctx.max_seconds is not None else None
+
+        while True:
+            text, _status, _err = await _get(ctx.http_client, grid_url, ctx.params, None)
+            if text is not None:
+                rows = enumerate_rows(parse_html(text), schema, grid_url)
+                # Newest-first feeds list the latest record at the top; reverse
+                # the freshly-seen ones so events arrive oldest→newest.
+                fresh = []
+                for row in rows:
+                    key = row.url or _content_key(row, schema)
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    fresh.append((key, row))
+                if len(seen) > _SEEN_CAP:  # keep only the most recent keys
+                    seen = {k for k, _ in fresh}
+
+                if not baseline and fresh:
+                    new_rows = [row for _key, row in reversed(fresh)]
+                    records = await _extract_records(ctx.http_client, schema, new_rows, grid_url, {})
+                    for (key, _row), record in zip(reversed(fresh), records, strict=False):
+                        yield SenseEvent(source=ctx.endpoint.path, payload=record, cursor=key)
+                        emitted += 1
+                        if ctx.max_events is not None and emitted >= ctx.max_events:
+                            return
+                baseline = False
+
+            if deadline is not None and loop.time() >= deadline:
+                return
+            await asyncio.sleep(interval)
+
+
+def _content_key(row: object, schema: GridSchema) -> str:
+    """Identity for a record with no detail URL — a hash of its row-scope text."""
+    node = getattr(row, "node", None)
+    text = node.get_text(" ", strip=True)[:200] if node is not None else ""
+    return str(hash(text)) if text else ""
 
 
 async def _extract_records(

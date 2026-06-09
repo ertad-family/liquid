@@ -194,3 +194,57 @@ async def test_stale_schema_when_all_records_empty():
     }
     with pytest.raises(EndpointGoneError):
         await _run(_site_handler, _endpoint(meta))
+
+
+# --- sense: perceive new records as the grid updates ------------------------
+
+
+async def test_sense_detects_new_record_after_baseline():
+    # The feed grows by one item between polls; sense should emit only the new
+    # one (baseline poll emits nothing), with its row fields extracted.
+    feeds = [
+        '<ul class="feed"><li class="item"><a class="ttl" href="/a/1">First</a></li></ul>',
+        '<ul class="feed">'
+        '<li class="item"><a class="ttl" href="/a/2">Second</a></li>'
+        '<li class="item"><a class="ttl" href="/a/1">First</a></li>'
+        "</ul>",
+    ]
+    state = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/news":
+            body = feeds[min(state["n"], len(feeds) - 1)]
+            state["n"] += 1
+            return httpx.Response(200, text=f"<html><body>{body}</body></html>", headers={"content-type": "text/html"})
+        return _site_handler(req)
+
+    meta = {
+        "row_selector": "li.item",
+        "link_selector": "a.ttl",
+        "detail": False,
+        "min_poll_interval": 0.01,  # keep the test fast; production floors at 15s
+        "fields": {"title": {"selector": "a.ttl", "scope": "row"}},
+    }
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        fetcher = Fetcher(http_client=client, vault=FakeVault())
+        stream = await fetcher.sense(
+            endpoint=_endpoint(meta),
+            base_url="https://site.test",
+            auth_ref="k",
+            poll_interval=0.01,
+            max_events=1,
+        )
+        events = [e async for e in stream]
+
+    assert len(events) == 1
+    assert events[0].payload["title"] == "Second"
+    assert events[0].payload["url"] == "https://site.test/a/2"
+    assert events[0].cursor == "https://site.test/a/2"
+    assert events[0].modality == "data"
+
+
+async def test_sense_supported_by_driver():
+    from liquid.transport import get_driver, supports_sense
+
+    assert supports_sense(get_driver("html_scrape"))
