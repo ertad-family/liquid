@@ -28,6 +28,7 @@ from liquid.transport.duckdb_driver import DuckDBDriver
 from liquid.transport.gmail_driver import GmailDriver
 from liquid.transport.graphql import GraphQLDriver
 from liquid.transport.grpc_driver import GRPCDriver
+from liquid.transport.html_scrape import HTMLScrapeDriver
 from liquid.transport.http import HTTPDriver
 from liquid.transport.imap_driver import IMAPDriver
 from liquid.transport.mcp_driver import MCPDriver
@@ -70,6 +71,7 @@ register_driver(BACnetDriver())
 register_driver(IMAPDriver())
 register_driver(SMTPDriver())
 register_driver(GmailDriver())
+register_driver(HTMLScrapeDriver())
 
 __all__ = [
     "A2ADriver",
@@ -81,6 +83,7 @@ __all__ = [
     "GRPCDriver",
     "GmailDriver",
     "GraphQLDriver",
+    "HTMLScrapeDriver",
     "HTTPDriver",
     "IMAPDriver",
     "MCPDriver",

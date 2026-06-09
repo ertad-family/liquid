@@ -65,6 +65,14 @@ grpc = [
     "grpcio-reflection>=1.60",
     "protobuf>=4.25",
 ]
+scrape = [
+    # Any-website-as-an-interface: scrape a list/detail HTML grid (news feed,
+    # product catalogue, job board) into records via CSS selectors. lxml is the
+    # fast parser; html.parser (stdlib) is the fallback so bs4 is the only hard
+    # requirement.
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+]
 ws = [
     "websockets>=12.0",
 ]

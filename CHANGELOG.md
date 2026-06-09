@@ -2,6 +2,40 @@
 
 All notable changes to Liquid will be documented in this file.
 
+## [Unreleased]
+
+### Added — HTML-grid adapter (any list/detail website as an interface)
+A website with catalog data — a news feed, a product catalogue, a job board, a
+search-results table — now maps onto the same `fetch`/`query` surface as a JSON
+API. The HTML lives only in one driver and one discovery strategy; everything
+above (mapping, query, `to_tools`, sync) is unchanged, so a scraped grid is
+indistinguishable from an API once it reaches the Fetcher.
+
+- **`HTMLScrapeDriver` (scheme `html_scrape`).** Fetches the grid page through the
+  shared httpx client (SSRF guard / redirects / pool intact), enumerates each
+  record, and — when fields live on a record's own page — fans out the N+1 detail
+  fetches concurrently. Returns the same protocol-agnostic `list[dict]` every
+  driver returns.
+- **Field-generic grid schema (`transport/_html.py`).** `fields` is an open
+  `name → FieldSpec` map with per-field `scope` (`row` = from the grid cell, no
+  extra request; `detail` = from the record page) and `multi` (join split
+  paragraphs), so the same engine extracts `{title, body, published_at}` from an
+  article and `{title, price, sku}` from a product card. The legacy news shape
+  (`heading_selector`, `text_content_selector`, …) is accepted and normalized, so
+  existing scrape schemas load unchanged.
+- **`HTMLScrapeDiscovery` + `schema_from_grid` (`discovery_method="html_scrape"`).**
+  A deterministic builder wraps a known grid schema into an adapter (no LLM); the
+  LLM-backed strategy (the "Architect") asks a model for the record container,
+  detail link, field map and a polling cron — one LLM call at discovery, zero at
+  fetch.
+- **Self-healing.** Per-field `fallback` (`og:title`/`og:image`/`h1`) recovers the
+  most fragile selectors without re-discovery; when the row selector matches
+  nothing or every record extracts empty, the driver reports `410 Gone`
+  (→ `EndpointGoneError`) — a non-retryable signal to re-discover, not a blind
+  retry.
+- Optional `scrape` extra (`pip install 'liquid-api[scrape]'`: beautifulsoup4 +
+  lxml); BeautifulSoup is imported lazily so the core stays dependency-free.
+
 ## [0.67.0] - 2026-06-04
 
 ### Added — Email adapter (an agent's mail senses & hands)
