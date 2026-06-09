@@ -24,6 +24,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from liquid.runtime.robots import RobotsGate, default_user_agent, respect_robots
 from liquid.transport._html import (
     GridSchema,
     enumerate_rows,
@@ -55,11 +56,18 @@ _MIN_SENSE_INTERVAL = 15.0
 # can't grow memory without limit — feeds rotate, so old keys won't reappear.
 _SEEN_CAP = 10_000
 
-_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+# Honest, identifiable bot UA — never a spoofed browser. Respecting robots.txt is
+# meaningless if you lie about who you are to dodge the rules aimed at you.
+_UA = default_user_agent()
 
 
 class HTMLScrapeDriver:
     scheme = "html_scrape"
+
+    def __init__(self) -> None:
+        # One robots cache per driver instance (the driver is registered once),
+        # so robots.txt is fetched at most hourly per origin across all calls.
+        self._robots = RobotsGate(_UA)
 
     async def fetch(self, ctx: FetchContext) -> DriverResponse:
         assert ctx.http_client is not None, "html_scrape driver requires an http_client"
@@ -70,7 +78,18 @@ class HTMLScrapeDriver:
                 error_body="html_scrape schema has neither row_selector nor link_selector",
             )
 
+        meta = ctx.endpoint.transport_meta or {}
+        respect = respect_robots(meta)
         grid_url = f"{ctx.base_url.rstrip('/')}{ctx.endpoint.path}"
+        if respect and not await self._robots.allowed(ctx.http_client, grid_url):
+            return DriverResponse(
+                status_code=403,
+                error_body=(
+                    f"blocked by robots.txt: {grid_url} — set LIQUID_RESPECT_ROBOTS=false "
+                    "or transport_meta['respect_robots']=false to override if you have permission"
+                ),
+            )
+
         page_text, status, err = await _get(ctx.http_client, grid_url, ctx.params, ctx.headers)
         if page_text is None:
             return DriverResponse(status_code=status, error_body=err)
@@ -91,7 +110,9 @@ class HTMLScrapeDriver:
                 ),
             )
 
-        records = await _extract_records(ctx.http_client, schema, rows, grid_url, ctx.headers)
+        records = await _extract_records(
+            ctx.http_client, schema, rows, grid_url, ctx.headers, gate=self._robots if respect else None
+        )
 
         # If every record came back empty, the per-field selectors (not the row
         # selector) have drifted — same stale-schema escalation.
@@ -124,11 +145,21 @@ class HTMLScrapeDriver:
         if not schema.link_selector and not schema.row_selector:
             return
 
+        meta = ctx.endpoint.transport_meta or {}
+        respect = respect_robots(meta)
+        grid_url = f"{ctx.base_url.rstrip('/')}{ctx.endpoint.path}"
+        if respect and not await self._robots.allowed(ctx.http_client, grid_url):
+            logger.info("html_scrape sense declined: %s is disallowed by robots.txt", grid_url)
+            return
+
         # Politeness floor — overridable per schema (a discovered grid knows its
         # own cadence via cron_frequency and can opt into faster/slower polling).
-        floor = (ctx.endpoint.transport_meta or {}).get("min_poll_interval", _MIN_SENSE_INTERVAL)
-        interval = max(ctx.poll_interval, float(floor))
-        grid_url = f"{ctx.base_url.rstrip('/')}{ctx.endpoint.path}"
+        # A robots Crawl-delay raises the floor further: an unattended poll loop is
+        # exactly the recurring traffic that directive is meant to pace.
+        floor = float(meta.get("min_poll_interval", _MIN_SENSE_INTERVAL))
+        if respect and (delay := await self._robots.crawl_delay(ctx.http_client, grid_url)) is not None:
+            floor = max(floor, delay)
+        interval = max(ctx.poll_interval, floor)
         seen: set[str] = set()
         baseline = True
         emitted = 0
@@ -153,7 +184,9 @@ class HTMLScrapeDriver:
 
                 if not baseline and fresh:
                     new_rows = [row for _key, row in reversed(fresh)]
-                    records = await _extract_records(ctx.http_client, schema, new_rows, grid_url, {})
+                    records = await _extract_records(
+                        ctx.http_client, schema, new_rows, grid_url, {}, gate=self._robots if respect else None
+                    )
                     for (key, _row), record in zip(reversed(fresh), records, strict=False):
                         yield SenseEvent(source=ctx.endpoint.path, payload=record, cursor=key)
                         emitted += 1
@@ -179,13 +212,22 @@ async def _extract_records(
     rows: list,
     grid_url: str,
     headers: dict[str, str],
+    *,
+    gate: RobotsGate | None = None,
 ) -> list[dict]:
-    """Build one dict per row, fetching detail pages concurrently when needed."""
+    """Build one dict per row, fetching detail pages concurrently when needed.
+
+    When ``gate`` is set, a detail page disallowed by robots.txt is skipped (the
+    record keeps its row-scope fields) rather than failing the whole grid.
+    """
     detail_pages: dict[int, object] = {}
     if schema.has_detail_fields:
         sem = asyncio.Semaphore(_DETAIL_CONCURRENCY)
 
         async def load(idx: int, url: str) -> None:
+            if gate is not None and not await gate.allowed(client, url):
+                logger.debug("skipping detail page disallowed by robots.txt: %s", url)
+                return
             async with sem:
                 text, _status, _err = await _get(client, url, None, headers)
             if text is not None:

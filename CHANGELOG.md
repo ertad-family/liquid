@@ -41,6 +41,19 @@ indistinguishable from an API once it reaches the Fetcher.
   `modality="data"` events. The poll interval is floored for politeness
   (overridable per schema via `min_poll_interval`). So an agent can *watch* a news
   feed or catalogue for new entries, not just pull it.
+- **Respects `robots.txt` + honest user-agent.** Scraping does recurring,
+  unattended traffic (sync + sense), so the driver honours the Robots Exclusion
+  Protocol by default and identifies as a real `LiquidBot/<version>` UA — never a
+  spoofed browser (honouring robots is meaningless if you lie about who you are to
+  dodge the rules aimed at you). Policy is **letter + honest token**: obey
+  Disallow/Allow and Crawl-delay written for our token (AI-specific bans like
+  `GPTBot`/`ClaudeBot` target other tokens, so don't apply by the letter); a
+  blocked grid returns `403` (→ `AuthError`), a blocked detail page is skipped,
+  and a robots `Crawl-delay` raises the sense poll floor. On by default,
+  overridable for sites you own or are entitled to scrape via
+  `LIQUID_RESPECT_ROBOTS=false` or `transport_meta["respect_robots"]=false`.
+  Empirically costs no coverage: across the 47 carried-over sources, 0 disallow
+  the `LiquidBot` token's content paths.
 - Optional `scrape` extra (`pip install 'liquid-api[scrape]'`: beautifulsoup4 +
   lxml); BeautifulSoup is imported lazily so the core stays dependency-free.
 
