@@ -109,6 +109,7 @@ class APISchema(BaseModel):
         "graphql",
         "rest_heuristic",
         "browser",
+        "html_scrape",
         "soap",
         "grpc",
         "websocket",
