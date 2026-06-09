@@ -29,6 +29,16 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def _clear_robots_cache():
+    # The driver is a registered singleton; clear its per-origin robots cache so
+    # each test's mock robots.txt is honoured fresh (no cross-test pollution).
+    from liquid.transport import get_driver
+
+    get_driver("html_scrape")._robots._cache.clear()
+    yield
+
+
 def _endpoint(meta: dict, path: str = "/news") -> Endpoint:
     return Endpoint(path=path, protocol="html_scrape", transport_meta=meta)
 
@@ -122,6 +132,7 @@ async def test_row_scope_avoids_detail_fetch():
     meta = {
         "row_selector": "li.item",
         "detail": False,
+        "respect_robots": False,  # isolate the detail-fetch behaviour under test
         "fields": {"title": {"selector": "a.ttl", "scope": "row"}},
     }
     result = await _run(handler, _endpoint(meta))
@@ -248,3 +259,74 @@ async def test_sense_supported_by_driver():
     from liquid.transport import get_driver, supports_sense
 
     assert supports_sense(get_driver("html_scrape"))
+
+
+# --- robots.txt (respected by default, honest UA, overridable) --------------
+
+
+def _robots_handler(rules: str):
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/robots.txt":
+            return httpx.Response(200, text=rules, headers={"content-type": "text/plain"})
+        return _site_handler(req)
+
+    return handler
+
+
+async def test_robots_blocks_disallowed_grid():
+    from liquid.exceptions import AuthError
+
+    # A fresh driver instance so the robots cache doesn't leak between tests.
+    handler = _robots_handler("User-agent: *\nDisallow: /news\n")
+    meta = {
+        "row_selector": "li.item",
+        "link_selector": "a.ttl",
+        "detail": False,
+        "fields": {"title": {"selector": "a.ttl", "scope": "row"}},
+    }
+    with pytest.raises(AuthError, match="robots.txt"):
+        await _run(handler, _endpoint(meta))
+
+
+async def test_robots_override_allows_disallowed_grid():
+    handler = _robots_handler("User-agent: *\nDisallow: /news\n")
+    meta = {
+        "row_selector": "li.item",
+        "link_selector": "a.ttl",
+        "detail": False,
+        "respect_robots": False,  # explicit override (you own the site / have rights)
+        "fields": {"title": {"selector": "a.ttl", "scope": "row"}},
+    }
+    result = await _run(handler, _endpoint(meta))
+    assert [r["title"] for r in result.records] == ["First", "Second"]
+
+
+async def test_robots_allows_when_path_not_disallowed():
+    handler = _robots_handler("User-agent: *\nDisallow: /private\n")
+    meta = {
+        "row_selector": "li.item",
+        "link_selector": "a.ttl",
+        "detail": False,
+        "fields": {"title": {"selector": "a.ttl", "scope": "row"}},
+    }
+    result = await _run(handler, _endpoint(meta))
+    assert len(result.records) == 2
+
+
+async def test_robots_missing_file_means_allowed():
+    # _site_handler returns 404 for /robots.txt → no restriction (RFC 9309).
+    meta = {
+        "row_selector": "li.item",
+        "link_selector": "a.ttl",
+        "detail": False,
+        "fields": {"title": {"selector": "a.ttl", "scope": "row"}},
+    }
+    result = await _run(_site_handler, _endpoint(meta))
+    assert len(result.records) == 2
+
+
+def test_user_agent_is_honest_not_spoofed():
+    from liquid.transport.html_scrape import _UA
+
+    assert _UA.startswith("LiquidBot/")
+    assert "Mozilla" not in _UA and "Chrome" not in _UA
