@@ -33,6 +33,14 @@ indistinguishable from an API once it reaches the Fetcher.
   nothing or every record extracts empty, the driver reports `410 Gone`
   (→ `EndpointGoneError`) — a non-retryable signal to re-discover, not a blind
   retry.
+- **`sense` — perceive grid updates.** `HTMLScrapeDriver` also implements
+  `SenseDriver`: a delta-poll that watches record *identity* (the detail URL, else
+  a content hash — a grid has no monotonic key, new items are prepended). The
+  first poll baselines and emits nothing; each later poll yields only records not
+  seen before (fields fully extracted, detail pages fetched for new items only) as
+  `modality="data"` events. The poll interval is floored for politeness
+  (overridable per schema via `min_poll_interval`). So an agent can *watch* a news
+  feed or catalogue for new entries, not just pull it.
 - Optional `scrape` extra (`pip install 'liquid-api[scrape]'`: beautifulsoup4 +
   lxml); BeautifulSoup is imported lazily so the core stays dependency-free.
 
