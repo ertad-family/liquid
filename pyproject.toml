@@ -129,6 +129,9 @@ dev = [
     # In-process MQTT broker for the live MQTT round-trip test (self-skips if absent).
     "amqtt>=0.11",
 ]
+can = [
+    "python-can>=4.4",
+]
 
 [build-system]
 requires = ["hatchling"]
