@@ -28,8 +28,8 @@ doesn't have to. It's the agent's senses **and** hands: `fetch`/`query` probe,
 - **Email** — IMAP/SMTP (any provider, app-password or OAuth2 `XOAUTH2`) and the
   Gmail API (OAuth2): read a mailbox, `sense` new mail as it arrives, and send
 - **Industrial / OT** — Modbus (PLCs, sensors) and OPC UA (Industry-4.0 nodes,
-  native subscriptions) for the factory floor; BACnet for buildings (HVAC/BMS) —
-  read, write, and sense
+  native subscriptions) for the factory floor; BACnet for buildings (HVAC/BMS),
+  and CAN bus for vehicles, robots, and embedded systems — read, write, and sense
 - **Android devices** — phones, TV boxes, kiosks via ADB: sense `logcat`, read
   `shell`, act with `input`/`am`
 - **Other agents & tools** — any MCP server, A2A agents, ChatGPT-plugin manifests
@@ -192,6 +192,7 @@ pip install 'liquid-api[mssql]'      # SQL Server (ODBC; needs a system ODBC dri
 pip install 'liquid-api[mongodb]'    # MongoDB (collections as endpoints)
 pip install 'liquid-api[redis]'      # Redis (keyspace namespaces as endpoints)
 pip install 'liquid-api[mqtt]'       # MQTT (IoT pub/sub)
+pip install 'liquid-api[can]'        # CAN bus (vehicles / robotics via python-can)
 pip install 'liquid-api[modbus]'     # Modbus (industrial registers)
 pip install 'liquid-api[opcua]'      # OPC UA (Industry-4.0 nodes + subscriptions)
 pip install 'liquid-api[bacnet]'     # BACnet (building automation; ADB needs the system `adb` binary)
@@ -339,6 +340,7 @@ pluggable transport driver runs it — but the agent-facing API (`fetch`, `query
 | MongoDB (document) | ✅ collections, field filters, pagination | ✅ | `liquid-api[mongodb]` |
 | Redis (key-value) | ✅ keyspace namespaces, typed values, SCAN paging | ✅ SET/HSET/DEL | `liquid-api[redis]` |
 | MQTT (IoT pub/sub) | ✅ subscribe → batch + live `sense` | ✅ publish | `liquid-api[mqtt]` |
+| CAN bus (vehicles / robotics) | ✅ bounded frame reads + live `sense` | ✅ frame transmit | `liquid-api[can]` |
 | Modbus (industrial) | ✅ register/coil read + delta-poll `sense` | ✅ register/coil write | `liquid-api[modbus]` |
 | OPC UA (industrial) | ✅ node read + native-subscription `sense` | ✅ node write | `liquid-api[opcua]` |
 | BACnet (buildings) | ✅ object property read + delta-poll `sense` | ✅ property write | `liquid-api[bacnet]` |

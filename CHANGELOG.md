@@ -4,6 +4,27 @@ All notable changes to Liquid will be documented in this file.
 
 ## [Unreleased]
 
+### Added — CAN bus transport driver (vehicles / robotics)
+
+A `ProtocolDriver` for CAN bus (scheme `can`) adds vehicle, robotics, and
+embedded-system communication to Liquid:
+
+- **`fetch`** — collect a bounded batch of CAN frames.
+- **`write`** — transmit a CAN frame with an arbitration ID and byte payload.
+- **`sense`** — receive live CAN traffic as `modality="telemetry"` `SenseEvent`s.
+- **`CANDiscovery`** — turns `can://<channel>` URLs into a generic `/frames`
+  endpoint (`discovery_method="can"`).
+- Frame payloads normalize to arbitration ID, hexadecimal data, frame flags,
+  and timestamp.
+- Blocking `python-can` receive/send calls are isolated with
+  `asyncio.to_thread` so they do not block Liquid's async event loop.
+- Requires the optional `can` extra (`python-can`), imported lazily so the core
+  remains dependency-free.
+
+Verified end-to-end using `python-can`'s virtual bus: Liquid frame transmit →
+virtual CAN receiver, and virtual CAN sender → Liquid `sense()`. Real Linux
+SocketCAN interfaces use the same driver with `interface="socketcan"`.
+
 ### Added — HTML-grid adapter (any list/detail website as an interface)
 A website with catalog data — a news feed, a product catalogue, a job board, a
 search-results table — now maps onto the same `fetch`/`query` surface as a JSON

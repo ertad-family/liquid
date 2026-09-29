@@ -14,6 +14,7 @@ from liquid.discovery.adb import ADBDiscovery
 from liquid.discovery.bacnet import BACnetDiscovery
 from liquid.discovery.base import DiscoveryPipeline
 from liquid.discovery.browser import BrowserDiscovery
+from liquid.discovery.can import CANDiscovery
 from liquid.discovery.diff import diff_schemas
 from liquid.discovery.duckdb import DuckDBDiscovery
 from liquid.discovery.email import EmailDiscovery
@@ -377,6 +378,7 @@ class Liquid:
                     MQTTDiscovery(),
                     ModbusDiscovery(),
                     OPCUADiscovery(),
+                    CANDiscovery(),
                     ADBDiscovery(),
                     BACnetDiscovery(),
                     # User-registered SQL backends defined as data (dialect manifests).
