@@ -22,11 +22,17 @@ import json
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 
 from liquid.client import Liquid
 from liquid.llm import llm_from_env
 from liquid.models.adapter import AdapterConfig
 from liquid.persistence import FileAdapterRegistry, FileVault
+
+if TYPE_CHECKING:
+    from mcp.server import Server
+
+    from liquid.approval.mcp import ApprovalMCP
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +57,7 @@ def _build_liquid() -> tuple[Liquid, FileAdapterRegistry]:
     return liquid, registry
 
 
-def _tool_definitions(allow_writes: bool = False) -> list:
+def _tool_definitions(allow_writes: bool = False, *, approval_mode: bool = False) -> list:
     """The MCP tool catalog.
 
     Kept as a standalone function (not inlined in ``list_tools``) so the schemas,
@@ -409,7 +415,7 @@ def _tool_definitions(allow_writes: bool = False) -> list:
         ),
     ]
 
-    if allow_writes:
+    if allow_writes and not approval_mode:
         tools.append(
             Tool(
                 name="liquid_execute",
@@ -461,10 +467,14 @@ def _tool_definitions(allow_writes: bool = False) -> list:
                 ),
             )
         )
+    if approval_mode:
+        from liquid.approval.mcp import approval_tool_definitions
+
+        tools.extend(approval_tool_definitions(allow_writes))
     return tools
 
 
-def create_server():
+def create_server(*, approvals: ApprovalMCP | None = None) -> Server:
     """Build the MCP Server. Requires ``pip install 'liquid-api[mcp]'``."""
     try:
         from mcp.server import Server
@@ -473,6 +483,16 @@ def create_server():
 
     liquid, registry = _build_liquid()
     allow_writes = _writes_enabled()
+    if approvals is None and os.environ.get("LIQUID_APPROVAL_FACTORY"):
+        from importlib import import_module
+
+        module, function = os.environ["LIQUID_APPROVAL_FACTORY"].rsplit(":", 1)
+        approvals = getattr(import_module(module), function)(liquid, registry)
+    if approvals is not None or os.environ.get("LIQUID_APPROVAL_FACTORY"):
+        from liquid.approval.mcp import ApprovalMCP
+
+        if not isinstance(approvals, ApprovalMCP):
+            raise TypeError("Approval factory must return ApprovalMCP")
     server = Server("liquid")
 
     def _ok(obj: dict) -> dict:
@@ -498,11 +518,36 @@ def create_server():
 
     @server.list_tools()
     async def list_tools() -> list:
-        return _tool_definitions(allow_writes)
+        return _tool_definitions(allow_writes, approval_mode=approvals is not None)
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list:
         try:
+            if name.startswith(
+                (
+                    "liquid_propose_",
+                    "liquid_check_approval",
+                    "liquid_publish_change",
+                    "liquid_audit_changes",
+                    "liquid_list_knowledge",
+                    "liquid_run_scheduled_rule",
+                )
+            ):
+                if approvals is None:
+                    return _ok({"error": "No approval context configured by the host"})
+                from liquid.approval import ApprovalConflictError
+
+                try:
+                    return _ok(await approvals.call(name, arguments, allow_writes=allow_writes))
+                except ApprovalConflictError as exc:
+                    return _ok({"error": f"{type(exc).__name__}: {exc}"})
+                except PermissionError:
+                    return _ok({"error": "PermissionError: authority denied or Writes are disabled"})
+                except Exception as exc:
+                    # Arbitrary provider/host errors can include secrets. Keep
+                    # details in the trusted host; expose only the error type.
+                    logger.warning("approval tool %s failed: %s", name, type(exc).__name__)
+                    return _ok({"error": f"{type(exc).__name__}: approval operation failed; inspect the change audit"})
             if name == "liquid_connect":
                 result = await liquid.get_or_create(
                     url=arguments["url"],
@@ -601,6 +646,8 @@ def create_server():
                 return _ok({"events": events, "count": len(events), "next_cursor": next_cursor})
 
             if name == "liquid_execute":
+                if approvals is not None:
+                    return _ok({"error": "Direct writes are disabled in approval mode; use liquid_propose_change"})
                 if not allow_writes:
                     return _ok({"error": "writes are disabled; start the server with LIQUID_ALLOW_WRITES=1 to enable"})
                 config = await _find(arguments["adapter_id"])

@@ -20,3 +20,13 @@ This is a thin launcher over [`liquid-api[mcp]`](https://pypi.org/project/liquid
 all engine code lives there. Full docs: https://github.com/ertad-family/liquid
 
 <!-- mcp-name: io.github.ertad-family/liquid -->
+
+
+## Per-change human approvals
+
+A trusted host can opt into approval mode with `LIQUID_APPROVAL_FACTORY=module:build`.
+The agent receives proposal, preview/status, audit and rollback tools; an authorised
+human responds through a separate, verified sender channel. `liquid_execute` is
+disabled in this mode. Publication still requires `LIQUID_ALLOW_WRITES=1` and an
+explicit approval bound to the exact draft hash. No model-callable approve tool
+exists. See [the library approval guide](../../docs/PER-CHANGE-APPROVAL.md).

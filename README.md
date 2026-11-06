@@ -280,6 +280,23 @@ persist under `~/.liquid`. Backed by **any LLM** — OpenAI, Gemini, Anthropic, 
 OpenAI-compatible/local endpoint via `base_url`, **100+ providers via LiteLLM**,
 or your own function through `CallableBackend`.
 
+## Human approval for every change
+
+`liquid.approval` adds hash-bound proposals, full previews/diffs, a pluggable human
+approver channel, authorization, audited publication through `write`, rollback,
+and scheduled rules. In approval mode an MCP agent proposes changes; an authorised
+human approves through a separate verified sender channel. In-memory, CLI and
+durable single-host SQLite defaults ship with the library.
+
+Preset 1 manages ElevenLabs voice-agent knowledge: two Spanish fact/event docs,
+website URL references, deterministic date-aware rendering and expiry, identity
+guards, backup/read-back, RAG verification and rollback. No live client is enabled.
+
+See [per-change approval and MCP](docs/PER-CHANGE-APPROVAL.md),
+[voice knowledge preset](docs/VOICE-AGENT-KNOWLEDGE.md), and the
+[local CLI example](examples/approval_cli.py). Hosted membership, WhatsApp and
+multi-tenant deployment belong in `liquid-cloud`.
+
 ## Quick start — LangGraph agent
 
 ```python
