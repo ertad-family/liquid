@@ -6,7 +6,7 @@ work with **zero discovery and zero LLM**:
 ```python
 from liquid import load_bundled_adapter, list_bundled_adapters
 
-list_bundled_adapters()            # -> ["glama", ...]
+list_bundled_adapters()  # -> ["glama", ...]
 adapter = load_bundled_adapter("glama")
 data = await liquid.fetch(adapter)  # deterministic; no model call
 ```

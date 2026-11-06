@@ -23,7 +23,8 @@ dependencies = [
     # The bundled MCP server (`liquid-mcp` console script) is a first-class
     # feature, so `mcp` is a core dep — `liquid-mcp` works after a plain install
     # and `uv sync` (no extra needed). Avoids a ModuleNotFoundError footgun.
-    "mcp>=1.0",
+    # The server uses the MCP 1.x model/notification API (2.x changes it).
+    "mcp>=1.0,<2",
     # FileVault encrypts credentials at rest (Fernet). A security primitive for the
     # default credential store is core, not optional — unlike provider SDKs.
     "cryptography>=42",
